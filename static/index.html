@@ -1,0 +1,1814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookly Support</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #eaeded;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: stretch;
+            z-index: 10;
+        }
+
+        .header-left {
+            flex: 1;
+            background: #232F3E;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 3px solid #FF9900;
+        }
+
+        .header-right {
+            width: 40%;
+            min-width: 340px;
+            background: #111318;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 3px solid #34d399;
+            border-left: 1px solid #2d3139;
+        }
+
+        .header-inspector-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .header-right .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4b5563;
+            transition: background 0.3s;
+        }
+
+        .header-right .dot.active {
+            background: #34d399;
+            box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+        }
+
+        .header-icon {
+            font-size: 28px;
+        }
+
+        .header-info h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .header-info p {
+            font-size: 12px;
+            color: #a0aec0;
+        }
+
+        /* Main layout: chat + sidebar */
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Chat column */
+        .chat-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            line-height: 1.5;
+            font-size: 14px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: #232F3E;
+            color: white;
+            border-bottom-right-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: white;
+            color: #0F1111;
+            border-bottom-left-radius: 4px;
+            border: 1px solid #d5d9d9;
+        }
+
+        /* Tool call indicators */
+        .tool-call {
+            align-self: flex-start;
+            background: #FEF3E2;
+            border: 1px solid #FFD699;
+            color: #C7511F;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            animation: fadeIn 0.3s ease;
+        }
+
+        /* Escalation handoff card */
+        .escalation-card {
+            align-self: flex-start;
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-radius: 12px;
+            padding: 16px;
+            max-width: 80%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .escalation-card h3 {
+            color: #c2410c;
+            font-size: 14px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .escalation-card .detail {
+            font-size: 12px;
+            color: #7c2d12;
+            margin-bottom: 4px;
+        }
+
+        .escalation-card .detail strong {
+            color: #9a3412;
+        }
+
+        /* Typing indicator */
+        .typing-indicator {
+            align-self: flex-start;
+            padding: 12px 16px;
+            background: white;
+            border-radius: 16px;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            display: flex;
+            gap: 4px;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #a0a0b0;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-6px); }
+        }
+
+        /* Streaming cursor */
+        .streaming-cursor::after {
+            content: '\25CA';
+            animation: blink 0.7s infinite;
+            color: #FF9900;
+            font-weight: 300;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Input area */
+        .input-area {
+            padding: 16px 24px;
+            background: white;
+            border-top: 1px solid #e5e5e5;
+            display: flex;
+            gap: 12px;
+        }
+
+        .input-area input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #d5d9d9;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .input-area input:focus {
+            border-color: #FF9900;
+            box-shadow: 0 0 0 3px rgba(255, 153, 0, 0.15);
+        }
+
+        .input-area button {
+            background: #FF9900;
+            color: #0F1111;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .input-area button:hover {
+            background: #E68A00;
+        }
+
+        .input-area button:disabled {
+            background: #d5d9d9;
+            color: #6b7280;
+            cursor: not-allowed;
+        }
+
+        /* Welcome message */
+        .welcome {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6b7280;
+        }
+
+        .welcome h2 {
+            color: #0F1111;
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .welcome p {
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .welcome .examples {
+            margin-top: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .welcome .example-chip {
+            background: white;
+            border: 1px solid #d5d9d9;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #C7511F;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .welcome .example-chip:hover {
+            background: #FEF3E2;
+            border-color: #FF9900;
+        }
+
+        /* ============================
+           SIDEBAR — Agent Transparency
+           ============================ */
+        .sidebar {
+            width: 40%;
+            min-width: 340px;
+            background: #1a1d23;
+            border-left: 1px solid #2d3139;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .sidebar .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4b5563;
+            transition: background 0.3s;
+        }
+
+        .sidebar .dot.active {
+            background: #34d399;
+            box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+        }
+
+        .sidebar-section {
+            padding: 16px 20px;
+            border-bottom: 1px solid #2d3139;
+        }
+
+        .sidebar-section h3 {
+            font-size: 10px;
+            font-weight: 700;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .sidebar-section h3::before {
+            content: '';
+            width: 3px;
+            height: 12px;
+            background: #34d399;
+            border-radius: 2px;
+        }
+
+        /* Verification status */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .status-badge.unverified {
+            background: #450a0a;
+            color: #f87171;
+            border: 1px solid #7f1d1d;
+        }
+
+        .status-badge.verified {
+            background: #064e3b;
+            color: #34d399;
+            border: 1px solid #065f46;
+        }
+
+        /* Customer info card */
+        .customer-card {
+            background: #1f2937;
+            border-radius: 8px;
+            padding: 12px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .customer-card .name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e5e7eb;
+            margin-bottom: 4px;
+        }
+
+        .customer-card .email {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+        /* Order context */
+        .order-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #0c2d48;
+            border: 1px solid #1e3a5f;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #38bdf8;
+            font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+        }
+
+        .no-context {
+            font-size: 12px;
+            color: #4b5563;
+            font-style: italic;
+        }
+
+        /* Tool activity log */
+        .tool-log {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .trace-entry {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 11px;
+            padding: 8px 0;
+            border-bottom: 1px solid #2d3139;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .trace-entry:last-child {
+            border-bottom: none;
+        }
+
+        .trace-status {
+            flex-shrink: 0;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 10px;
+            margin-top: 1px;
+        }
+
+        .trace-status.success {
+            background: #064e3b;
+            color: #34d399;
+        }
+
+        .trace-status.blocked {
+            background: #450a0a;
+            color: #f87171;
+        }
+
+        .trace-status.held {
+            background: #451a03;
+            color: #fbbf24;
+        }
+
+        .trace-status.info {
+            background: #0c2d48;
+            color: #38bdf8;
+        }
+
+        .trace-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .trace-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .trace-tool {
+            font-weight: 600;
+            color: #e5e7eb;
+            font-size: 11px;
+            font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+        }
+
+        .trace-args {
+            color: #6b7280;
+            font-size: 10px;
+            font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .trace-result {
+            margin-top: 3px;
+            font-size: 11px;
+            color: #9ca3af;
+            line-height: 1.4;
+        }
+
+        .trace-result.success {
+            color: #34d399;
+        }
+
+        .trace-result.blocked {
+            color: #f87171;
+        }
+
+        .trace-result.held {
+            color: #fbbf24;
+        }
+
+        .trace-turn-marker {
+            font-size: 10px;
+            color: #6b7280;
+            padding: 6px 0 2px 0;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #2d3139;
+            margin-bottom: 0;
+        }
+
+        .trace-tag {
+            display: inline-block;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            padding: 1px 5px;
+            border-radius: 3px;
+            vertical-align: middle;
+            margin-left: 4px;
+        }
+
+        .trace-tag.llm {
+            background: #2e1065;
+            color: #c4b5fd;
+        }
+
+        .trace-tag.gate {
+            background: #052e16;
+            color: #86efac;
+        }
+
+        .trace-tag.func {
+            background: #1f2937;
+            color: #d1d5db;
+        }
+
+        .trace-key {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            margin-bottom: 4px;
+            border-bottom: 1px solid #2d3139;
+        }
+
+        .trace-key-label {
+            font-size: 10px;
+            color: #6b7280;
+            margin-right: 8px;
+        }
+
+        /* Actions taken */
+        .action-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .action-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #374151;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .action-item .check {
+            color: #059669;
+            font-weight: bold;
+        }
+
+        /* Turn counter */
+        /* Confirmation pending card (chat) */
+        .confirmation-card {
+            align-self: flex-start;
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            border-radius: 12px;
+            padding: 14px 16px;
+            max-width: 80%;
+            animation: fadeIn 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: #92400e;
+        }
+
+        .confirmation-card .conf-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .confirmation-card .conf-text strong {
+            color: #78350f;
+        }
+
+        /* Pending confirmation badge (sidebar) */
+        .status-badge.pending-confirm {
+            background: #fffbeb;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+            animation: pulse-amber 2s infinite;
+        }
+
+        @keyframes pulse-amber {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(252, 211, 77, 0.4); }
+            50% { box-shadow: 0 0 0 4px rgba(252, 211, 77, 0); }
+        }
+
+        /* State inspector (raw key-value view) */
+        .state-inspector {
+            font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+
+        .state-row {
+            display: flex;
+            gap: 8px;
+            padding: 3px 0;
+            border-bottom: 1px solid #2d3139;
+        }
+
+        .state-key {
+            color: #38bdf8;
+            font-weight: 600;
+            white-space: nowrap;
+            min-width: 70px;
+        }
+
+        .state-val {
+            color: #d1d5db;
+            word-break: break-all;
+        }
+
+        .state-val.empty {
+            color: #4b5563;
+            font-style: italic;
+        }
+
+        .state-val.bool-true {
+            color: #34d399;
+            font-weight: 600;
+        }
+
+        .state-val.bool-false {
+            color: #f87171;
+        }
+
+        /* Chat log */
+        .chat-log {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .chat-log-entry {
+            display: flex;
+            gap: 6px;
+            font-size: 11px;
+            line-height: 1.4;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .chat-log-entry .log-role {
+            flex-shrink: 0;
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+        }
+
+        .chat-log-entry .log-role.user-role {
+            background: #232F3E;
+            color: white;
+        }
+
+        .chat-log-entry .log-role.agent-role {
+            background: #1f2937;
+            color: #fbbf24;
+        }
+
+        .chat-log-entry .log-text {
+            color: #9ca3af;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        /* Summary card (auto-generated) */
+        .summary-card {
+            margin-top: 12px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .summary-field {
+            margin-bottom: 12px;
+        }
+
+        .summary-field-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .summary-field-value {
+            font-size: 12px;
+            color: #d1d5db;
+            line-height: 1.5;
+        }
+
+        .summary-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .summary-badge.resolved {
+            background: #064e3b;
+            color: #34d399;
+        }
+
+        .summary-badge.escalated {
+            background: #451a03;
+            color: #fbbf24;
+        }
+
+        .summary-badge.unresolved {
+            background: #450a0a;
+            color: #f87171;
+        }
+
+        .summary-badge.positive { background: #064e3b; color: #34d399; }
+        .summary-badge.neutral { background: #1f2937; color: #9ca3af; }
+        .summary-badge.frustrated { background: #451a03; color: #fbbf24; }
+        .summary-badge.angry { background: #450a0a; color: #f87171; }
+
+        .summary-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .summary-list li {
+            font-size: 12px;
+            color: #d1d5db;
+            padding: 2px 0;
+            padding-left: 14px;
+            position: relative;
+        }
+
+        .summary-list li::before {
+            content: '•';
+            position: absolute;
+            left: 0;
+            color: #6b7280;
+        }
+
+        .turn-counter {
+            font-size: 24px;
+            font-weight: 700;
+            color: #e5e7eb;
+        }
+
+        .turn-label {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 2px;
+        }
+
+        /* Intent classification badge */
+        .intent-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .intent-badge.order_inquiry {
+            background: #0c2d48;
+            color: #38bdf8;
+        }
+
+        .intent-badge.return_request {
+            background: #451a03;
+            color: #fbbf24;
+        }
+
+        .intent-badge.policy_question {
+            background: #064e3b;
+            color: #34d399;
+        }
+
+        .intent-badge.account_issue {
+            background: #2e1065;
+            color: #c4b5fd;
+        }
+
+        .intent-badge.off_topic {
+            background: #450a0a;
+            color: #f87171;
+        }
+
+        .intent-confidence {
+            font-size: 10px;
+            font-weight: 400;
+            opacity: 0.7;
+        }
+
+        /* CSAT Rating Widget */
+        .csat-widget {
+            align-self: center;
+            background: white;
+            border: 1px solid #d5d9d9;
+            border-radius: 12px;
+            padding: 20px 24px;
+            text-align: center;
+            max-width: 360px;
+            width: 100%;
+            animation: fadeIn 0.4s ease;
+            margin: 8px 0;
+        }
+
+        .csat-widget h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #0F1111;
+            margin-bottom: 4px;
+        }
+
+        .csat-widget p {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 14px;
+        }
+
+        .csat-stars {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .csat-star {
+            font-size: 32px;
+            cursor: pointer;
+            transition: transform 0.15s, filter 0.15s;
+            filter: grayscale(1) opacity(0.35);
+            user-select: none;
+        }
+
+        .csat-star:hover,
+        .csat-star.hovered {
+            transform: scale(1.2);
+            filter: grayscale(0) opacity(1);
+        }
+
+        .csat-star.selected {
+            filter: grayscale(0) opacity(1);
+        }
+
+        .csat-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #9ca3af;
+            padding: 0 4px;
+        }
+
+        .csat-submitted {
+            align-self: center;
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            border-radius: 12px;
+            padding: 14px 20px;
+            text-align: center;
+            max-width: 360px;
+            width: 100%;
+            animation: fadeIn 0.3s ease;
+            margin: 8px 0;
+        }
+
+        .csat-submitted .check-icon {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .csat-submitted p {
+            font-size: 13px;
+            color: #065f46;
+            font-weight: 500;
+        }
+
+        /* Sidebar CSAT score display */
+        .csat-score-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .csat-score-number {
+            font-size: 28px;
+            font-weight: 700;
+            color: #e5e7eb;
+        }
+
+        .csat-score-stars {
+            font-size: 16px;
+            letter-spacing: 2px;
+        }
+
+        .csat-score-label {
+            font-size: 11px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <span class="header-icon">📚</span>
+            <div class="header-info">
+                <h1>Bookly Support</h1>
+                <p>AI-powered customer support</p>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="dot" id="statusDot"></div>
+            <span class="header-inspector-label">Agent Inspector</span>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <!-- Chat column -->
+        <div class="chat-wrapper">
+            <div class="chat-container" id="chat">
+                <div class="welcome">
+                    <h2>Hi there! Welcome to Bookly Support.</h2>
+                    <p>I can help you with order tracking, returns, shipping questions, and more.</p>
+                    <div class="examples">
+                        <span class="example-chip" onclick="sendExample(this)">Where's my order?</span>
+                        <span class="example-chip" onclick="sendExample(this)">I want to return a book</span>
+                        <span class="example-chip" onclick="sendExample(this)">What's your return policy?</span>
+                        <span class="example-chip" onclick="sendExample(this)">I need to reset my password</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="input" placeholder="Type your message..." autocomplete="off"
+                       onkeydown="if(event.key === 'Enter') sendMessage()">
+                <button id="sendBtn" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+
+        <!-- Sidebar — Agent Transparency Panel -->
+        <div class="sidebar" id="sidebar">
+            <!-- Live State -->
+            <div class="sidebar-section">
+                <h3>Current State</h3>
+                <div class="state-inspector" id="stateInspector">
+                    <div class="state-row"><span class="state-key">verified</span><span class="state-val bool-false">false</span></div>
+                    <div class="state-row"><span class="state-key">customer</span><span class="state-val empty">—</span></div>
+                    <div class="state-row"><span class="state-key">email</span><span class="state-val empty">—</span></div>
+                    <div class="state-row"><span class="state-key">order</span><span class="state-val empty">—</span></div>
+                    <div class="state-row"><span class="state-key">actions</span><span class="state-val empty">none</span></div>
+                    <div class="state-row"><span class="state-key">pending</span><span class="state-val empty">—</span></div>
+                    <div class="state-row"><span class="state-key">turns</span><span class="state-val">0</span></div>
+                    <div class="state-row"><span class="state-key">intent</span><span class="state-val empty">—</span></div>
+                </div>
+            </div>
+
+            <!-- Tool Trace Log -->
+            <div class="sidebar-section">
+                <h3>Tool Trace</h3>
+                <div class="trace-key">
+                    <span class="trace-tag llm">LLM</span><span class="trace-key-label">Model inference</span>
+                    <span class="trace-tag gate">GATE</span><span class="trace-key-label">Server guardrail</span>
+                    <span class="trace-tag func">FUNC</span><span class="trace-key-label">Deterministic</span>
+                </div>
+                <div class="tool-log" id="toolLog">
+                    <span class="no-context">Waiting for first message</span>
+                </div>
+            </div>
+
+            <!-- Chat Log -->
+            <div class="sidebar-section">
+                <h3>Chat Log</h3>
+                <div class="chat-log" id="chatLog">
+                    <span class="no-context">No messages yet</span>
+                </div>
+            </div>
+
+            <!-- Conversation Summary (auto-generated) -->
+            <div class="sidebar-section">
+                <h3>Conversation Summary</h3>
+                <div id="summaryCard">
+                    <span class="no-context">Will generate after first exchange</span>
+                </div>
+            </div>
+
+            <!-- CSAT Score -->
+            <div class="sidebar-section">
+                <h3>CSAT Score</h3>
+                <div id="csatDisplay">
+                    <span class="no-context">Awaiting rating</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let conversationState = {};
+        let messages = [];
+        let isLoading = false;
+        let turnCount = 0;
+        let allToolCalls = [];
+
+        const TOOL_LABELS = {
+            "verify_customer_email": "🔐 Verifying customer identity",
+            "lookup_order": "📦 Looking up order",
+            "search_orders_by_email": "🔍 Searching for orders",
+            "initiate_return": "↩️ Processing return request",
+            "search_knowledge_base": "📖 Checking policy",
+            "escalate_to_human": "👤 Connecting to human agent",
+        };
+
+        const TOOL_ICONS = {
+            "verify_customer_email": "🔐",
+            "lookup_order": "📦",
+            "search_orders_by_email": "🔍",
+            "initiate_return": "↩️",
+            "search_knowledge_base": "📖",
+            "escalate_to_human": "👤",
+        };
+
+        const INTENT_LABELS = {
+            "order_inquiry": "📦 Order Inquiry",
+            "return_request": "↩️ Return Request",
+            "policy_question": "📖 Policy Question",
+            "account_issue": "🔑 Account Issue",
+            "off_topic": "⛔ Off Topic",
+        };
+
+
+        let csatRating = null;
+        let csatShown = false;
+
+        const CSAT_LABELS_MAP = {
+            1: 'Very Dissatisfied',
+            2: 'Dissatisfied',
+            3: 'Neutral',
+            4: 'Satisfied',
+            5: 'Very Satisfied',
+        };
+
+        function showCSATWidget() {
+            // Skip if customer already submitted a rating
+            if (csatRating) return;
+
+            // Remove any previous unsubmitted CSAT widget (e.g., from an earlier resolution)
+            var existing = document.getElementById('csatWidget');
+            if (existing) existing.remove();
+
+            csatShown = true;
+
+            const chat = document.getElementById('chat');
+            const widget = document.createElement('div');
+            widget.className = 'csat-widget';
+            widget.id = 'csatWidget';
+            widget.innerHTML =
+                '<h4>How was your experience?</h4>' +
+                '<p>Rate your interaction with Bookly Support</p>' +
+                '<div class="csat-stars" id="csatStars">' +
+                '<span class="csat-star" data-rating="1" onmouseenter="hoverStars(1)" onmouseleave="unhoverStars()" onclick="submitCSAT(1)">★</span>' +
+                '<span class="csat-star" data-rating="2" onmouseenter="hoverStars(2)" onmouseleave="unhoverStars()" onclick="submitCSAT(2)">★</span>' +
+                '<span class="csat-star" data-rating="3" onmouseenter="hoverStars(3)" onmouseleave="unhoverStars()" onclick="submitCSAT(3)">★</span>' +
+                '<span class="csat-star" data-rating="4" onmouseenter="hoverStars(4)" onmouseleave="unhoverStars()" onclick="submitCSAT(4)">★</span>' +
+                '<span class="csat-star" data-rating="5" onmouseenter="hoverStars(5)" onmouseleave="unhoverStars()" onclick="submitCSAT(5)">★</span>' +
+                '</div>' +
+                '<div class="csat-labels"><span>Poor</span><span>Excellent</span></div>';
+            chat.appendChild(widget);
+            scrollToBottom();
+        }
+
+        function hoverStars(rating) {
+            var stars = document.querySelectorAll('#csatStars .csat-star');
+            stars.forEach(function(star) {
+                var r = parseInt(star.getAttribute('data-rating'));
+                if (r <= rating) {
+                    star.classList.add('hovered');
+                } else {
+                    star.classList.remove('hovered');
+                }
+            });
+        }
+
+        function unhoverStars() {
+            var stars = document.querySelectorAll('#csatStars .csat-star');
+            stars.forEach(function(star) {
+                if (!star.classList.contains('selected')) {
+                    star.classList.remove('hovered');
+                }
+            });
+        }
+
+        function submitCSAT(rating) {
+            csatRating = rating;
+            conversationState.csat_score = rating;
+            conversationState.csat_label = CSAT_LABELS_MAP[rating];
+
+            // Replace widget with thank-you card
+            var widget = document.getElementById('csatWidget');
+            if (widget) {
+                var submitted = document.createElement('div');
+                submitted.className = 'csat-submitted';
+                submitted.innerHTML =
+                    '<div class="check-icon">✅</div>' +
+                    '<p>Thanks! You rated ' + rating + '/5 — ' + CSAT_LABELS_MAP[rating] + '</p>';
+                widget.replaceWith(submitted);
+            }
+
+            // Update sidebar with CSAT score
+            updateCSATDisplay(rating);
+            updateSidebar();
+            scrollToBottom();
+        }
+
+        function updateCSATDisplay(rating) {
+            var container = document.getElementById('csatDisplay');
+            if (!container) return;
+            var filled = '★'.repeat(rating);
+            var empty = '☆'.repeat(5 - rating);
+            container.innerHTML =
+                '<div class="csat-score-display">' +
+                '<div class="csat-score-number">' + rating + '/5</div>' +
+                '<div>' +
+                '<div class="csat-score-stars" style="color: #FF9900;">' + filled + '</div>' +
+                '<div class="csat-score-stars" style="color: #d5d9d9; margin-top: -4px;">' + empty + '</div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="csat-score-label" style="margin-top: 4px;">' + CSAT_LABELS_MAP[rating] + '</div>';
+        }
+
+        function sendExample(el) {
+            document.getElementById('input').value = el.textContent;
+            sendMessage();
+        }
+
+        // =====================
+        // SIDEBAR UPDATE LOGIC
+        // =====================
+
+        function updateSidebar() {
+            document.getElementById('statusDot').className = 'dot' + (isLoading ? ' active' : '');
+
+            // Build state inspector rows
+            function stateVal(val, cls) {
+                cls = cls || '';
+                return '<span class="state-val ' + cls + '">' + val + '</span>';
+            }
+
+            var verified = conversationState.verified || false;
+            var customer = conversationState.customer_name || null;
+            var email = conversationState.customer_email || null;
+            var order = conversationState.current_order_id || null;
+            var actions = conversationState.actions_taken || [];
+            var pending = conversationState.pending_return || null;
+
+            var rows = '';
+            rows += '<div class="state-row"><span class="state-key">verified</span>' + stateVal(verified, verified ? 'bool-true' : 'bool-false') + '</div>';
+            rows += '<div class="state-row"><span class="state-key">customer</span>' + (customer ? stateVal(customer) : stateVal('—', 'empty')) + '</div>';
+            rows += '<div class="state-row"><span class="state-key">email</span>' + (email ? stateVal(email) : stateVal('—', 'empty')) + '</div>';
+            rows += '<div class="state-row"><span class="state-key">order</span>' + (order ? stateVal(order) : stateVal('—', 'empty')) + '</div>';
+            rows += '<div class="state-row"><span class="state-key">actions</span>' + (actions.length > 0 ? stateVal(actions.join(', ')) : stateVal('none', 'empty')) + '</div>';
+            rows += '<div class="state-row"><span class="state-key">pending</span>' + (pending ? stateVal('return ' + pending.order_id, 'bool-false') : stateVal('—', 'empty')) + '</div>';
+            rows += '<div class="state-row"><span class="state-key">turns</span>' + stateVal(turnCount) + '</div>';
+
+            // Intent classification
+            var intent = conversationState.current_intent || null;
+            var confidence = conversationState.intent_confidence || null;
+            if (intent) {
+                var intentHtml = '<span class="intent-badge ' + intent + '">' + INTENT_LABELS[intent] + ' <span class="intent-confidence">(' + confidence + ')</span></span>';
+                if (conversationState.all_intents && conversationState.all_intents.length > 1) {
+                    conversationState.all_intents.forEach(function(i) {
+                        if (i !== intent) intentHtml += ' <span class="intent-badge ' + i + '" style="opacity:0.7;font-size:11px;">' + (INTENT_LABELS[i] || i) + '</span>';
+                    });
+                }
+                rows += '<div class="state-row"><span class="state-key">intent</span><span class="state-val">' + intentHtml + '</span></div>';
+            } else {
+                rows += '<div class="state-row"><span class="state-key">intent</span>' + stateVal('—', 'empty') + '</div>';
+            }
+
+            // CSAT score in state
+            if (csatRating) {
+                rows += '<div class="state-row"><span class="state-key">csat</span>' + stateVal(csatRating + '/5 — ' + CSAT_LABELS_MAP[csatRating]) + '</div>';
+            }
+
+            document.getElementById('stateInspector').innerHTML = rows;
+        }
+
+        function addChatLogEntry(role, text) {
+            var logEl = document.getElementById('chatLog');
+            if (logEl.querySelector('.no-context')) {
+                logEl.innerHTML = '';
+            }
+            var entry = document.createElement('div');
+            entry.className = 'chat-log-entry';
+            var isUser = (role === 'user');
+            // Truncate long messages for the log
+            var preview = text.length > 120 ? text.substring(0, 120) + '...' : text;
+            entry.innerHTML =
+                '<div class="log-role ' + (isUser ? 'user-role' : 'agent-role') + '">' + (isUser ? '👤' : '🤖') + '</div>' +
+                '<div class="log-text">' + preview.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        var traceCounter = 0;
+
+        function addTurnMarker() {
+            const logEl = document.getElementById('toolLog');
+            if (logEl.querySelector('.no-context')) {
+                logEl.innerHTML = '';
+            }
+            const marker = document.createElement('div');
+            marker.className = 'trace-turn-marker';
+            marker.textContent = 'Turn ' + turnCount;
+            logEl.appendChild(marker);
+        }
+
+        function addIntentToLog(intent, confidence, allIntents) {
+            const logEl = document.getElementById('toolLog');
+            if (logEl.querySelector('.no-context')) {
+                logEl.innerHTML = '';
+            }
+            addTurnMarker();
+            const label = INTENT_LABELS[intent] || intent;
+            var resultText = 'Routed → ' + label + ' (' + confidence + ')';
+            if (allIntents && allIntents.length > 1) {
+                var extras = allIntents.filter(function(i) { return i !== intent; }).map(function(i) { return INTENT_LABELS[i] || i; });
+                resultText += ' · Also: ' + extras.join(', ');
+            }
+            const entry = document.createElement('div');
+            entry.className = 'trace-entry';
+            entry.innerHTML =
+                '<div class="trace-status info">🎯</div>' +
+                '<div class="trace-body">' +
+                '<div class="trace-header"><span class="trace-tool">intent_classifier</span><span class="trace-tag llm">LLM</span></div>' +
+                '<div class="trace-result">' + resultText + '</div>' +
+                '</div>';
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function addToolToLog(toolName, args, result) {
+            const logEl = document.getElementById('toolLog');
+            if (logEl.querySelector('.no-context')) {
+                logEl.innerHTML = '';
+            }
+            traceCounter++;
+
+            // Build args summary
+            var argStr = '';
+            if (toolName === 'verify_customer_email' && args.email) {
+                argStr = args.email;
+            } else if (toolName === 'lookup_order' && args.order_id) {
+                argStr = args.order_id;
+            } else if (toolName === 'search_knowledge_base' && args.query) {
+                argStr = '"' + args.query + '"';
+            } else if (toolName === 'search_orders_by_email' && args.email) {
+                argStr = args.email;
+            } else if (toolName === 'initiate_return') {
+                argStr = (args.order_id || '') + (args.item_title ? ' · ' + args.item_title : '');
+            } else if (toolName === 'escalate_to_human' && args.reason) {
+                argStr = args.reason;
+            }
+
+            // Determine status and result text from the tool result
+            var statusClass = 'success';
+            var statusIcon = '✓';
+            var resultText = '';
+
+            if (result && typeof result === 'object') {
+                // Guardrail blocked
+                if (result.guardrail) {
+                    statusClass = 'blocked';
+                    statusIcon = '✕';
+                    var guardrailLabels = {
+                        'verification_required': 'Blocked — customer not verified',
+                        'input_validation': 'Blocked — ' + (result.message || 'invalid input'),
+                        'cross_customer_block': 'Blocked — order belongs to another customer',
+                        'order_lookup_required': 'Blocked — must look up orders first',
+                    };
+                    resultText = guardrailLabels[result.guardrail] || ('Blocked — ' + result.guardrail);
+                }
+                // Confirmation held
+                else if (result.status === 'confirmation_required') {
+                    statusClass = 'held';
+                    statusIcon = '⏸';
+                    resultText = 'Held — awaiting customer confirmation';
+                }
+                // Verification result
+                else if (toolName === 'verify_customer_email') {
+                    if (result.verified) {
+                        resultText = '✓ Verified: ' + (result.customer_name || args.email);
+                    } else {
+                        statusClass = 'blocked';
+                        statusIcon = '✕';
+                        resultText = 'Not found — no account for this email';
+                    }
+                }
+                // Order search result
+                else if (toolName === 'search_orders_by_email') {
+                    var orders = result.orders || [];
+                    resultText = orders.length + ' order' + (orders.length !== 1 ? 's' : '') + ' found';
+                    if (orders.length > 0) {
+                        var ids = orders.map(function(o) { return o.order_id; });
+                        resultText += ' (' + ids.join(', ') + ')';
+                    }
+                }
+                // Order lookup result
+                else if (toolName === 'lookup_order') {
+                    if (result.error) {
+                        statusClass = 'blocked';
+                        statusIcon = '✕';
+                        resultText = result.message || 'Order not found';
+                    } else {
+                        resultText = (result.status || 'found') + (result.tracking_number ? ' · Tracking: ' + result.tracking_number : '');
+                    }
+                }
+                // Return result
+                else if (toolName === 'initiate_return') {
+                    if (result.approved) {
+                        resultText = '✓ Approved — ' + (result.return_id || '') + ' · Refund: ' + (result.refund_amount || '');
+                    } else {
+                        statusClass = 'blocked';
+                        statusIcon = '✕';
+                        resultText = 'Denied — ' + (result.denial_reason || result.message || 'ineligible');
+                    }
+                }
+                // Knowledge base
+                else if (toolName === 'search_knowledge_base') {
+                    var policies = result.results || [];
+                    resultText = policies.length + ' polic' + (policies.length !== 1 ? 'ies' : 'y') + ' matched';
+                    if (policies.length > 0) {
+                        resultText += ' (' + policies.map(function(p) { return p.id || p.title || ''; }).join(', ') + ')';
+                    }
+                }
+                // Escalation
+                else if (toolName === 'escalate_to_human') {
+                    statusClass = 'held';
+                    statusIcon = '↗';
+                    resultText = 'Escalated to human agent';
+                }
+                // Generic error
+                else if (result.error) {
+                    statusClass = 'blocked';
+                    statusIcon = '✕';
+                    resultText = result.message || 'Error';
+                }
+                // Generic success
+                else {
+                    resultText = 'OK';
+                }
+            } else {
+                resultText = 'OK';
+            }
+
+            // Determine tag type: GATE for guardrail blocks and confirmation holds, FUNC for executed results
+            var resultTag = '';
+            if (result && typeof result === 'object' && (result.guardrail || result.status === 'confirmation_required')) {
+                resultTag = '<span class="trace-tag gate">GATE</span>';
+            } else {
+                resultTag = '<span class="trace-tag func">FUNC</span>';
+            }
+
+            const entry = document.createElement('div');
+            entry.className = 'trace-entry';
+            entry.innerHTML =
+                '<div class="trace-status ' + statusClass + '">' + statusIcon + '</div>' +
+                '<div class="trace-body">' +
+                '<div class="trace-header">' +
+                '<span class="trace-tool">' + toolName + '</span><span class="trace-tag llm">LLM</span>' +
+                (argStr ? '<span class="trace-args">' + argStr + '</span>' : '') +
+                '</div>' +
+                '<div class="trace-result ' + statusClass + '">' + resultTag + ' ' + resultText + '</div>' +
+                '</div>';
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function addGuardrailToLog(toolName, guardrail, message) {
+            // Now handled by addToolToLog via the result object — this is a no-op fallback
+        }
+
+        function resetToolLog() {
+            // No longer reset between turns — the trace log is persistent
+        }
+
+        // =====================
+        // CHAT + STREAMING
+        // =====================
+
+        async function sendMessage() {
+            const input = document.getElementById('input');
+            const text = input.value.trim();
+            if (!text || isLoading) return;
+
+            const welcome = document.querySelector('.welcome');
+            if (welcome) welcome.remove();
+
+            addMessage('user', text);
+            messages.push({ role: 'user', content: text });
+            addChatLogEntry('user', text);
+            input.value = '';
+            isLoading = true;
+            turnCount++;
+            document.getElementById('sendBtn').disabled = true;
+
+            resetToolLog();
+            updateSidebar();
+            showTyping();
+
+            try {
+                const res = await fetch('/chat/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: messages,
+                        conversation_state: conversationState,
+                    }),
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error('Server returned ' + res.status + ': ' + errText.slice(0, 200));
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+
+                let assistantBubble = null;
+                let rawText = '';
+                let buffer = '';
+                let eventType = null;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            eventType = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            let data;
+                            try {
+                                data = JSON.parse(line.slice(6));
+                            } catch (parseErr) {
+                                console.warn('SSE parse error on line:', JSON.stringify(line), parseErr);
+                                continue;
+                            }
+
+                            if (eventType === 'tool_call') {
+                                const label = TOOL_LABELS[data.tool] || ('🔧 ' + data.tool);
+                                let detail = '';
+                                if (data.tool === 'lookup_order' && data.args.order_id) {
+                                    detail = ' — ' + data.args.order_id;
+                                } else if (data.tool === 'verify_customer_email' && data.args.email) {
+                                    detail = ' — ' + data.args.email;
+                                } else if (data.tool === 'search_knowledge_base' && data.args.query) {
+                                    detail = ' — "' + data.args.query + '"';
+                                }
+                                removeTyping();
+                                addToolCall(label + detail);
+                                showTyping();
+
+                                addToolToLog(data.tool, data.args, data.result);
+                            }
+
+                            else if (eventType === 'intent_classified') {
+                                // Store intent in conversation state for sidebar display
+                                conversationState.current_intent = data.intent;
+                                conversationState.intent_confidence = data.confidence;
+                                conversationState.all_intents = data.all_intents || [data.intent];
+                                updateSidebar();
+
+                                // Add to tool log as the first entry
+                                addIntentToLog(data.intent, data.confidence, data.all_intents);
+                            }
+
+                            else if (eventType === 'guardrail_blocked') {
+                                // Already shown via tool_call result — no-op
+                            }
+
+                            else if (eventType === 'confirmation_required') {
+                                removeTyping();
+                                addConfirmationCard(data.order_id, data.reason);
+                                showPendingConfirmation(data.order_id);
+                                showTyping();
+                            }
+
+                            else if (eventType === 'token') {
+                                if (!assistantBubble) {
+                                    removeTyping();
+                                    assistantBubble = createStreamingBubble();
+                                }
+                                rawText += data.token;
+                                assistantBubble.innerHTML = formatText(rawText);
+                                assistantBubble.classList.add('streaming-cursor');
+                                scrollToBottom();
+                            }
+
+                            else if (eventType === 'done') {
+                                if (assistantBubble) {
+                                    assistantBubble.classList.remove('streaming-cursor');
+                                }
+                                if (!assistantBubble && data.full_response) {
+                                    removeTyping();
+                                    addMessage('assistant', data.full_response);
+                                }
+                                if (data.escalation) {
+                                    addEscalationCard(data.escalation);
+                                }
+                                messages.push({ role: 'assistant', content: data.full_response || rawText });
+                                addChatLogEntry('assistant', data.full_response || rawText);
+                                conversationState = data.conversation_state;
+
+                                // Clear pending confirmation if the return was processed
+                                if (!conversationState.pending_return) {
+                                    clearPendingConfirmation();
+                                }
+
+                                updateSidebar();
+
+                                // Auto-generate conversation summary after each exchange
+                                generateSummary();
+                            }
+
+                            eventType = null;
+                        }
+                    }
+                }
+
+            } catch (err) {
+                removeTyping();
+                console.error('Stream error:', err);
+                const errMsg = err.message || String(err);
+                if (errMsg.includes('Server error:') || errMsg.includes('Server returned')) {
+                    addMessage('assistant', errMsg);
+                } else {
+                    addMessage('assistant', 'Connection interrupted — the response was cut short. Please send your message again.');
+                }
+            }
+
+            isLoading = false;
+            document.getElementById('sendBtn').disabled = false;
+            updateSidebar();
+            input.focus();
+        }
+
+        function formatText(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>');
+        }
+
+        function addMessage(role, content) {
+            const chat = document.getElementById('chat');
+            const div = document.createElement('div');
+            div.className = 'message ' + role;
+            div.innerHTML = formatText(content);
+            chat.appendChild(div);
+            scrollToBottom();
+        }
+
+        function createStreamingBubble() {
+            const chat = document.getElementById('chat');
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            chat.appendChild(div);
+            scrollToBottom();
+            return div;
+        }
+
+        function addToolCall(label) {
+            const chat = document.getElementById('chat');
+            const div = document.createElement('div');
+            div.className = 'tool-call';
+            div.innerHTML = label;
+            chat.appendChild(div);
+            scrollToBottom();
+        }
+
+        function addEscalationCard(escalation) {
+            const chat = document.getElementById('chat');
+            const div = document.createElement('div');
+            div.className = 'escalation-card';
+            div.innerHTML = '<h3>🔀 Escalated to Human Agent</h3>' +
+                '<div class="detail"><strong>Ticket:</strong> ' + escalation.ticket_id + '</div>' +
+                '<div class="detail"><strong>Reason:</strong> ' + escalation.escalation_reason + '</div>' +
+                '<div class="detail"><strong>Summary:</strong> ' + escalation.handoff_summary + '</div>' +
+                '<div class="detail"><strong>Sentiment:</strong> ' + escalation.customer_sentiment + '</div>';
+            chat.appendChild(div);
+            scrollToBottom();
+        }
+
+        function addGuardrailToLog(toolName, guardrail, message) {
+            var logEl = document.getElementById('toolLog');
+            if (logEl.querySelector('.no-context')) {
+                logEl.innerHTML = '';
+            }
+            var labels = {
+                'verification_required': '🛡️ Blocked: not verified',
+                'input_validation': '🛡️ Blocked: invalid input',
+                'cross_customer_block': '🛡️ Blocked: wrong customer',
+            };
+            var label = labels[guardrail] || ('🛡️ Blocked: ' + guardrail);
+            var entry = document.createElement('div');
+            entry.className = 'tool-log-entry';
+            entry.innerHTML =
+                '<div class="tool-icon blocked">🛡️</div>' +
+                '<div class="tool-info">' +
+                '<div class="tool-name">' + toolName + '</div>' +
+                '<div class="tool-detail blocked">' + label + '</div>' +
+                '</div>';
+            logEl.appendChild(entry);
+        }
+
+        function addConfirmationCard(orderId, reason) {
+            const chat = document.getElementById('chat');
+            const div = document.createElement('div');
+            div.className = 'confirmation-card';
+            div.innerHTML =
+                '<span class="conf-icon">⚠️</span>' +
+                '<div class="conf-text">' +
+                '<strong>Confirmation required</strong> — Please confirm the return for ' + orderId +
+                ' to proceed.' +
+                '</div>';
+            chat.appendChild(div);
+            scrollToBottom();
+        }
+
+        function showPendingConfirmation(orderId) {
+            const toolLog = document.getElementById('toolLog');
+            // Add a pending badge if not already there
+            if (!document.getElementById('pendingConfirm')) {
+                const badge = document.createElement('div');
+                badge.id = 'pendingConfirm';
+                badge.className = 'tool-entry';
+                badge.innerHTML = '<span class="status-badge pending-confirm">⏳ Pending: return ' + orderId + '</span>';
+                toolLog.appendChild(badge);
+            }
+        }
+
+        function clearPendingConfirmation() {
+            const el = document.getElementById('pendingConfirm');
+            if (el) el.remove();
+        }
+
+        function showTyping() {
+            if (document.getElementById('typing')) return;
+            const chat = document.getElementById('chat');
+            const div = document.createElement('div');
+            div.className = 'typing-indicator';
+            div.id = 'typing';
+            div.innerHTML = '<span></span><span></span><span></span>';
+            chat.appendChild(div);
+            scrollToBottom();
+        }
+
+        function removeTyping() {
+            const el = document.getElementById('typing');
+            if (el) el.remove();
+        }
+
+        async function generateSummary() {
+            if (messages.length < 2) return; // Need at least one exchange
+            document.getElementById('summaryCard').innerHTML =
+                '<span class="no-context">Generating summary...</span>';
+
+            try {
+                var res = await fetch('/summary', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: messages,
+                        conversation_state: conversationState,
+                    }),
+                });
+                var data = await res.json();
+                displaySummary(data);
+            } catch (err) {
+                console.error(err);
+                document.getElementById('summaryCard').innerHTML =
+                    '<span class="no-context">Summary unavailable</span>';
+            }
+        }
+
+        function displaySummary(data) {
+            var statusClass = data.resolution_status || 'unresolved';
+            var sentimentClass = data.customer_sentiment || 'neutral';
+
+            var issuesHtml = (data.issues_raised || []).map(function(i) {
+                return '<li>' + i + '</li>';
+            }).join('');
+
+            var actionsHtml = (data.actions_taken || []).map(function(a) {
+                return '<li>' + a + '</li>';
+            }).join('');
+
+            document.getElementById('summaryCard').innerHTML =
+                '<div class="summary-card">' +
+
+                '<div class="summary-field">' +
+                '<div class="summary-field-label">Resolution</div>' +
+                '<span class="summary-badge ' + statusClass + '">' + statusClass + '</span>' +
+                '</div>' +
+
+                '<div class="summary-field">' +
+                '<div class="summary-field-label">Customer Sentiment</div>' +
+                '<span class="summary-badge ' + sentimentClass + '">' + sentimentClass + '</span>' +
+                '</div>' +
+
+                '<div class="summary-field">' +
+                '<div class="summary-field-label">Issues Raised</div>' +
+                '<ul class="summary-list">' + (issuesHtml || '<li>None</li>') + '</ul>' +
+                '</div>' +
+
+                '<div class="summary-field">' +
+                '<div class="summary-field-label">Actions Taken</div>' +
+                '<ul class="summary-list">' + (actionsHtml || '<li>None</li>') + '</ul>' +
+                '</div>' +
+
+                '<div class="summary-field">' +
+                '<div class="summary-field-label">Summary</div>' +
+                '<div class="summary-field-value">' + (data.resolution_summary || 'N/A') + '</div>' +
+                '</div>' +
+
+                '<div class="summary-field">' +
+                '<div class="summary-field-label">Quality Notes</div>' +
+                '<div class="summary-field-value">' + (data.quality_notes || 'N/A') + '</div>' +
+                '</div>' +
+
+                '</div>';
+
+            // Show CSAT when summary says resolved/escalated and no pending confirmation
+            if ((statusClass === 'resolved' || statusClass === 'escalated') && !conversationState.pending_return) {
+                setTimeout(function() { showCSATWidget(); }, 800);
+            }
+        }
+
+        function scrollToBottom() {
+            const chat = document.getElementById('chat');
+            chat.scrollTop = chat.scrollHeight;
+        }
+    </script>
+</body>
+</html>
