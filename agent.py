@@ -87,7 +87,7 @@ Rules:
 - If unsure between off_topic and another category, ask: "Is the customer trying to get help with something Bookly-related?" If no → off_topic
 
 Examples:
-"do u like trump" → off_topic
+"who killed JFK" → off_topic
 "what's 2+2" → off_topic
 "you're dumb" (no prior context) → off_topic
 "hey" → off_topic
