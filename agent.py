@@ -39,6 +39,11 @@ def _is_confirmation(message):
     return bool(words) and len(words) <= 4 and all(w in CONFIRMATION_TOKENS for w in words)
 
 
+def _normalize_text(text):
+    """Lowercase, strip punctuation, collapse whitespace — for forgiving substring checks."""
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", str(text).lower()).split())
+
+
 EMAIL_RE = re.compile(r"^\S+@\S+\.\S+$")
 ORDER_ID_RE = re.compile(r"^ord-\d+$", re.IGNORECASE)
 
@@ -71,9 +76,10 @@ Categories:
 - off_topic: The message is NOT about Bookly, books, orders, accounts, or customer support at all
 
 Rules:
-- You are told the PREVIOUS intent. If the latest message simply continues that flow — an email
-  address, an order ID, a return reason like "it was damaged", "yes", "ok thanks" — return the
-  previous intent. Only switch when the customer raises something genuinely new.
+- You are told the PREVIOUS intent. Keep it ONLY when the latest message is a bare reply to
+  something the agent asked — an email address, an order ID, a return reason ("it was damaged"),
+  or a short confirmation ("yes", "ok thanks"). If the message contains ANY new request or
+  question, classify that request — even mid-flow.
 - Greetings like "hi" or "hello" at the START of a conversation → off_topic (no support context yet)
 - Political opinions, random questions, insults, jokes unrelated to books/orders → off_topic
 - Questions about Bookly itself ("are you a bot?", "what do you sell?") → policy_question
@@ -90,7 +96,15 @@ Examples:
 "are you a real person" → policy_question
 "I can't log in" → account_issue
 
-Return JSON: {"intent": "<category>", "confidence": "high"|"medium"|"low"}
+Mid-conversation (previous intent given):
+Previous: return_request | "yes" → return_request
+Previous: return_request | "jane@email.com" → return_request
+Previous: return_request | "do you have an estimated delivery date?" → order_inquiry
+Previous: order_inquiry | "actually I want to return it" → return_request
+
+Return JSON: {"intent": "<category>", "confidence": "high"|"medium"|"low", "secondary": []}
+"secondary" is usually empty. Fill it only when the message explicitly asks for a SECOND, distinct
+thing — e.g. "I want to return X and when does Y arrive" → intent return_request, secondary ["order_inquiry"].
 Return ONLY valid JSON."""
 
 
@@ -111,7 +125,7 @@ def classify_intent(latest_message, client, previous_intent=None):
                 )},
             ],
             response_format={"type": "json_object"},
-            max_tokens=50,
+            max_tokens=80,
         )
         return json.loads(response.choices[0].message.content)
     except Exception as e:
@@ -128,9 +142,10 @@ def classify_intent(latest_message, client, previous_intent=None):
 INTENT_SNIPPETS = {
     "order_inquiry": """
 ## Active Focus: Order Inquiry
-The customer is asking about an order. Prioritize:
+The customer is asking about an order. You MUST:
 - Verify their identity first if not already verified
-- Use lookup_order if they have an order ID, or search_orders_by_email if they don't
+- Call lookup_order for the specific order EVERY time a status or delivery question is asked — even if you looked it up earlier in this conversation. Never answer a status question from memory; status changes.
+- If they don't know the order ID, call search_orders_by_email first, then lookup_order on the one they mean
 - Proactively share: current status, tracking number (if shipped), estimated delivery
 - If the order is delayed or lost, acknowledge concern and offer next steps
 """,
@@ -140,7 +155,7 @@ The customer wants to return something. Follow this sequence:
 1. Verify identity if not verified
 2. Identify the specific order (ask if ambiguous)
 3. Find the reason. Check ALL of their messages — "came damaged", "wrong book", "didn't like it" are reasons; never re-ask for one already given. But "it just arrived" or "I want to return it" is NOT a reason. If the customer has not said WHY, ASK — do not call initiate_return with a guessed or invented reason.
-4. Map their reason onto a policy category (changed_my_mind / wrong_item_received / damaged_on_arrival / not_as_described) and call initiate_return — the first call is held for confirmation automatically
+4. Map their reason onto a policy category (changed_my_mind / wrong_item_received / damaged_on_arrival / not_as_described), quote their exact words as customer_words, and call initiate_return — the first call is held for confirmation automatically
 5. Clearly explain next steps: return label, refund timeline, store credit option
 If the return is denied, explain exactly why and offer alternatives (escalation, store credit)
 """,
@@ -162,6 +177,16 @@ email verification. Answer right away. You MUST:
 - Make clear you CANNOT change passwords or email addresses directly (policy restriction)
 - If they can't access their email, offer to escalate for manual identity verification
 """,
+}
+
+# Intents that count as an "issue" the customer wants resolved — everything but
+# off_topic. Each open issue is tracked in conversation_state["issues"] until a
+# tool outcome resolves it. The label is the wording used in prompts and the UI.
+ISSUE_LABELS = {
+    "order_inquiry": "order status",
+    "return_request": "return request",
+    "policy_question": "policy question",
+    "account_issue": "account issue",
 }
 
 # ---------------------------------------------------------------------------
@@ -205,7 +230,7 @@ The system enforces a confirmation step automatically:
 1. When you have the order ID and reason, call initiate_return immediately — do NOT ask the customer to confirm first
 2. Your first call will be HELD (not processed) — you'll get a confirmation_required response
 3. Use that response to summarize the return details for the customer and ask them to confirm. Then STOP and wait — do NOT call initiate_return again in the same turn, it will just be held again
-4. Only after the customer replies with an explicit confirmation, call initiate_return again with the same details
+4. Only after the customer replies with an explicit confirmation ("yes", "go ahead"), call initiate_return again with the SAME order_id and reason. A reply that only adds information (e.g. gives a reason) is NOT a confirmation
 IMPORTANT: Do NOT ask "Shall I go ahead?" BEFORE calling initiate_return. The server-side gate handles the confirmation flow — calling the tool is what triggers it.
 
 ## Edge Cases (handle these well)
@@ -297,12 +322,16 @@ TOOLS = [
                         "enum": list(RETURN_REASONS),
                         "description": "The customer's reason, mapped onto a Return Policy (POL-001) category. Only use one the customer has actually expressed — if they haven't said why, ask them first instead of calling this tool.",
                     },
+                    "customer_words": {
+                        "type": "string",
+                        "description": "The customer's own words giving their reason, copied VERBATIM from one of their messages (e.g. 'the cover is ripped'). The server rejects the call if this text does not appear in what the customer typed — so if they haven't said why, ask them instead of calling.",
+                    },
                     "item_title": {
                         "type": "string",
                         "description": "Optional. The title of the book being returned, copied exactly from the order's items. Omit it entirely if the customer has not named a specific book — never guess or invent a title.",
                     },
                 },
-                "required": ["order_id", "reason"],
+                "required": ["order_id", "reason", "customer_words"],
             },
         },
     },
@@ -370,6 +399,13 @@ def _build_system_prompt(conversation_state, intent=None):
         state_context += f"- Currently discussing order: {conversation_state['current_order_id']}\n"
     if conversation_state.get("actions_taken"):
         state_context += f"- Actions taken this session: {', '.join(conversation_state['actions_taken'])}\n"
+    open_issues = [i for i in conversation_state.get("issues", []) if i.get("status") == "open"]
+    if open_issues:
+        listed = ", ".join(
+            f"{ISSUE_LABELS.get(i['intent'], i['intent'])} (raised turn {i.get('opened_turn', '?')})"
+            for i in open_issues
+        )
+        state_context += f"- Open issues not yet resolved: {listed}. Address every one before wrapping up.\n"
 
     # Route in the focused instructions for whichever intent was detected.
     # Messages raising several issues at once are handled by the Edge Cases
@@ -380,11 +416,55 @@ def _build_system_prompt(conversation_state, intent=None):
 
 
 # ---------------------------------------------------------------------------
+# HELPER: Resolve open issues from tool outcomes
+# ---------------------------------------------------------------------------
+
+def _resolve_issues(func_name, result, conversation_state):
+    """
+    Mark open issues resolved based on what a tool actually returned. Resolution
+    is derived from tool outcomes, never from the model claiming it helped:
+      - a return is resolved once it's approved OR denied (either is an answer)
+      - an order inquiry once a specific order was retrieved with lookup_order,
+        or a search came back with exactly one order (that IS the answer); a
+        search that finds several only produces candidates, so it resolves nothing
+      - a policy/account question once the knowledge base returned a policy
+      - an escalation moves every open issue to "escalated"
+    (A turn that answers from order data already fetched earlier is handled in
+    the conversation loop — see the end-of-turn check there.)
+    """
+    issues = conversation_state.get("issues", [])
+    if not issues or not isinstance(result, dict) or result.get("guardrail"):
+        return
+
+    resolved = set()
+    if func_name == "initiate_return" and "approved" in result:
+        resolved.add("return_request")
+    elif func_name == "lookup_order" and not result.get("error"):
+        resolved.add("order_inquiry")
+    elif func_name == "search_orders_by_email" and result.get("count") == 1:
+        resolved.add("order_inquiry")
+    elif func_name == "search_knowledge_base" and result.get("count"):
+        resolved.update({"policy_question", "account_issue"})
+
+    for issue in issues:
+        if issue.get("status") != "open":
+            continue
+        if func_name == "escalate_to_human":
+            issue["status"] = "escalated"
+        elif issue["intent"] in resolved:
+            issue["status"] = "resolved"
+
+
+# ---------------------------------------------------------------------------
 # HELPER: Execute a tool call and update conversation state
 # ---------------------------------------------------------------------------
 
-def _execute_tool(func_name, func_args, conversation_state):
-    """Run a tool function and update state. Returns (result, escalation_or_None)."""
+def _execute_tool(func_name, func_args, conversation_state, customer_text=""):
+    """
+    Run a tool function and update state. Returns (result, escalation_or_None).
+    customer_text is everything the customer has typed so far (normalized), used
+    to check that a return reason is grounded in their own words.
+    """
     # --- Normalize arguments ONCE, up front ---
     # Everything below (and the confirmation gate) compares against these values,
     # so the model varying case/whitespace can never cause a mismatch.
@@ -440,6 +520,20 @@ def _execute_tool(func_name, func_args, conversation_state):
             "guardrail": "input_validation",
         }, None
 
+    # 2c. Grounding: the reason must be backed by the customer's own words. The
+    # model has to quote what the customer said; if that quote isn't in the
+    # transcript, the reason was invented — block it and ask instead.
+    if func_name == "initiate_return":
+        quote = _normalize_text(func_args.get("customer_words", ""))
+        if not quote or quote not in customer_text:
+            return {
+                "error": True,
+                "message": "The customer has not given a reason for this return in their own words "
+                           f"(you quoted: '{func_args.get('customer_words', '')}', which does not appear in "
+                           "anything they typed). Ask them why they want to return it before calling initiate_return.",
+                "guardrail": "reason_not_grounded",
+            }, None
+
     # 3. Cross-customer access check: ensure the order belongs to the verified customer
     if func_name in ("lookup_order", "initiate_return") and conversation_state.get("verified"):
         check_order_id = func_args.get("order_id", "")
@@ -490,6 +584,7 @@ def _execute_tool(func_name, func_args, conversation_state):
             actions = conversation_state.setdefault("actions_taken", [])
             if denied not in actions:
                 actions.append(denied)
+            _resolve_issues("initiate_return", preview, conversation_state)
             return preview, None
 
     # --- Confirmation gate for destructive actions ---
@@ -500,7 +595,12 @@ def _execute_tool(func_name, func_args, conversation_state):
     if func_name == "initiate_return":
         pending = conversation_state.get("pending_return")
         this_turn = conversation_state.get("turn")
-        if pending and pending["order_id"] == func_args.get("order_id") and pending.get("turn") != this_turn:
+        same_request = (
+            pending
+            and pending["order_id"] == func_args.get("order_id")
+            and pending.get("reason") == func_args.get("reason")   # a changed reason is a new request
+        )
+        if same_request and pending.get("turn") != this_turn:
             # Customer confirmed on a later turn — clear pending and fall through to execute
             conversation_state.pop("pending_return", None)
         else:
@@ -515,7 +615,8 @@ def _execute_tool(func_name, func_args, conversation_state):
                 "order_id": func_args.get("order_id"),
                 "reason": func_args.get("reason"),
                 "message": "Return held — summarize the details for the customer and ask them to confirm. "
-                           "Do NOT call initiate_return again in this turn; wait for the customer's reply.",
+                           "Do NOT call initiate_return again in this turn; wait for the customer's reply. "
+                           "When they confirm, call again with the SAME order_id and reason.",
             }, None
 
     if func_name in TOOL_FUNCTIONS:
@@ -545,6 +646,7 @@ def _execute_tool(func_name, func_args, conversation_state):
         escalation = result
         conversation_state.setdefault("actions_taken", []).append("escalated to human agent")
 
+    _resolve_issues(func_name, result, conversation_state)
     return result, escalation
 
 
@@ -573,7 +675,8 @@ def get_agent_response_stream(messages, conversation_state):
     # Deterministic shortcut: replies to the agent's own questions (an email, an
     # order ID, "yes") carry the previous intent forward — no LLM call needed.
     previous_intent = conversation_state.get("current_intent")
-    if _continues_current_flow(latest_msg) and previous_intent and previous_intent != "off_topic":
+    carried_forward = bool(_continues_current_flow(latest_msg) and previous_intent and previous_intent != "off_topic")
+    if carried_forward:
         intent_result = {"intent": previous_intent, "confidence": "high"}
     else:
         intent_result = classify_intent(latest_msg, client, previous_intent)
@@ -582,13 +685,38 @@ def get_agent_response_stream(messages, conversation_state):
     conversation_state["current_intent"] = detected_intent
     conversation_state["intent_confidence"] = intent_result.get("confidence", "low")
 
+    # Open an issue for each distinct thing the customer asked for this turn —
+    # the primary intent plus any secondary one the classifier spotted. One row
+    # per intent: raising a resolved issue again reopens its row rather than
+    # duplicating it. Tool outcomes close rows (see _resolve_issues). A bare
+    # reply ("yes", an email) continues an existing issue — it never opens one.
+    secondary = intent_result.get("secondary")
+    if not isinstance(secondary, list):
+        secondary = []
+    issues = conversation_state.setdefault("issues", [])
+    for intent in ([] if carried_forward else [detected_intent] + secondary):
+        if intent not in ISSUE_LABELS:
+            continue
+        existing = next((i for i in issues if i.get("intent") == intent), None)
+        if existing is None:
+            issues.append({"intent": intent, "opened_turn": conversation_state["turn"], "status": "open"})
+        elif existing.get("status") == "resolved":
+            # Escalated rows stay escalated — a human owns them now.
+            existing["status"] = "open"
+            existing["opened_turn"] = conversation_state["turn"]
+
     # Yield intent classification event to UI
     yield f"event: intent_classified\ndata: {json.dumps(intent_result)}\n\n"
 
     full_system_prompt = _build_system_prompt(conversation_state, intent=detected_intent)
     full_messages = [{"role": "system", "content": full_system_prompt}] + messages
 
+    # Everything the customer has typed, normalized — the grounding guardrail
+    # checks a return reason's quoted evidence against this.
+    customer_text = _normalize_text(" ".join(m.get("content", "") for m in messages if m.get("role") == "user"))
+
     escalation = None
+    tools_called = False
     max_iterations = 10
 
     try:
@@ -613,7 +741,8 @@ def get_agent_response_stream(messages, conversation_state):
                     func_name = tool_call.function.name
                     func_args = json.loads(tool_call.function.arguments)
 
-                    result, esc = _execute_tool(func_name, func_args, conversation_state)
+                    result, esc = _execute_tool(func_name, func_args, conversation_state, customer_text)
+                    tools_called = True
                     if esc:
                         escalation = esc
 
@@ -649,6 +778,14 @@ def get_agent_response_stream(messages, conversation_state):
                     token = chunk.choices[0].delta.content
                     full_response += token
                     yield f"event: token\ndata: {json.dumps({'token': token})}\n\n"
+
+            # An order question answered with NO tool call this turn — from order
+            # data a tool already retrieved earlier in the conversation — counts as
+            # resolved: the answer is grounded in tool data, just not re-fetched.
+            if not tools_called and conversation_state.get("current_order_id"):
+                for issue in conversation_state.get("issues", []):
+                    if issue.get("intent") == "order_inquiry" and issue.get("status") == "open":
+                        issue["status"] = "resolved"
 
             # Send the final done event with updated state
             yield f"event: done\ndata: {json.dumps({'conversation_state': conversation_state, 'escalation': escalation, 'full_response': full_response})}\n\n"

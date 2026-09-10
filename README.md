@@ -19,7 +19,7 @@ Customer → Chat UI → FastAPI Server → OpenAI (gpt-4o-mini)
 - **Structured tool use** — the LLM decides *what* to do, but tools enforce *how*. The agent can't invent order data because it must call `lookup_order()` to get it.
 - **Verification-first flow** — customer email is verified before any order data is shared, preventing unauthorized access.
 - **Knowledge base with citation** — policy questions are answered by retrieving specific policy articles, not from the LLM's general knowledge. This prevents hallucinated policies.
-- **Conversation state tracking** — a structured state object tracks verification status, current order, and actions taken, injected into each prompt so the agent knows where it is.
+- **Conversation state tracking** — a structured state object tracks verification status, current order, and actions taken, injected into each prompt so the agent knows where it is. It also keeps an **issue ledger**: every distinct thing the customer has asked for, with a status (open / resolved / escalated) derived from tool outcomes rather than from the model's own claim to have helped — so a two-issue message can't quietly lose its second issue.
 - **Graceful escalation** — when the agent can't resolve an issue, it generates a structured handoff packet for a human agent with full context and customer sentiment.
 
 **Guardrails are enforced server-side, not by the prompt.** Before any tool runs, `_execute_tool()` in
@@ -39,6 +39,9 @@ disposes.
   articles. With a real policy corpus this becomes vector search, but the important property — the agent
   must retrieve and cite rather than recall — is already enforced.
 - **Mock data is in-process.** Returns mutate nothing durable; restarting the server resets everything.
+- **Issues are keyed by type.** The ledger opens one issue per intent (return, order status, policy,
+  account), so two distinct order questions in one conversation collapse into a single
+  `order_inquiry` issue. Keying by `(intent, order_id)` is the production follow-up.
 
 ## Quick Start
 

@@ -297,11 +297,13 @@ def search_orders_by_email(email: str) -> dict:
     return {"orders": [], "count": 0, "message": "No orders found for this email."}
 
 
-def initiate_return(order_id: str, reason: str, item_title: str = "") -> dict:
+def initiate_return(order_id: str, reason: str, customer_words: str = "", item_title: str = "") -> dict:
     """
     Attempt to initiate a return for an order.
     Checks eligibility: 30-day window, physical item, not already returned.
     Returns approval or denial with explanation.
+    (customer_words is the customer's quoted reason; the agent layer verifies it
+    against the transcript before this function is ever called.)
     """
     order_id = order_id.upper().strip()
     order = ORDERS.get(order_id)

@@ -964,6 +964,14 @@
             font-size: 11px;
             color: #6b7280;
         }
+        /* Issue ledger rows in the state inspector */
+        .issue-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: 2px 0;
+        }
+        .issue-row .summary-badge { font-size: 10px; }
     </style>
 </head>
 <body>
@@ -1017,7 +1025,8 @@
                     <div class="state-row"><span class="state-key">actions</span><span class="state-val empty">none</span></div>
                     <div class="state-row"><span class="state-key">pending</span><span class="state-val empty">—</span></div>
                     <div class="state-row"><span class="state-key">turns</span><span class="state-val">0</span></div>
-                    <div class="state-row"><span class="state-key">intent</span><span class="state-val empty">—</span></div>
+                    <div class="state-row"><span class="state-key">intent (turn)</span><span class="state-val empty">—</span></div>
+                    <div class="state-row"><span class="state-key">issues</span><span class="state-val empty">—</span></div>
                 </div>
             </div>
 
@@ -1214,14 +1223,30 @@
             rows += '<div class="state-row"><span class="state-key">pending</span>' + (pending ? stateVal('return ' + pending.order_id, 'bool-false') : stateVal('—', 'empty')) + '</div>';
             rows += '<div class="state-row"><span class="state-key">turns</span>' + stateVal(turnCount) + '</div>';
 
-            // Intent classification
+            // Intent classification — THIS turn only. It routes the prompt; it is not history.
             var intent = conversationState.current_intent || null;
             var confidence = conversationState.intent_confidence || null;
             if (intent) {
                 var intentHtml = '<span class="intent-badge ' + intent + '">' + INTENT_LABELS[intent] + ' <span class="intent-confidence">(' + confidence + ')</span></span>';
-                rows += '<div class="state-row"><span class="state-key">intent</span><span class="state-val">' + intentHtml + '</span></div>';
+                rows += '<div class="state-row"><span class="state-key">intent (turn)</span><span class="state-val">' + intentHtml + '</span></div>';
             } else {
-                rows += '<div class="state-row"><span class="state-key">intent</span>' + stateVal('—', 'empty') + '</div>';
+                rows += '<div class="state-row"><span class="state-key">intent (turn)</span>' + stateVal('—', 'empty') + '</div>';
+            }
+
+            // Issue ledger — everything the customer has asked for across the whole
+            // conversation, each with a status derived from tool outcomes (agent.py _resolve_issues)
+            var issues = conversationState.issues || [];
+            if (issues.length > 0) {
+                var ISSUE_STATUS_CLASS = { open: 'unresolved', resolved: 'resolved', escalated: 'escalated' };
+                var issuesHtml = issues.map(function(i) {
+                    return '<div class="issue-row">' +
+                        '<span class="intent-badge ' + i.intent + '">' + (INTENT_LABELS[i.intent] || i.intent) + '</span>' +
+                        '<span class="summary-badge ' + (ISSUE_STATUS_CLASS[i.status] || 'unresolved') + '">' + i.status + '</span>' +
+                        '</div>';
+                }).join('');
+                rows += '<div class="state-row"><span class="state-key">issues</span><span class="state-val">' + issuesHtml + '</span></div>';
+            } else {
+                rows += '<div class="state-row"><span class="state-key">issues</span>' + stateVal('—', 'empty') + '</div>';
             }
 
             // CSAT score in state
@@ -1296,7 +1321,7 @@
             } else if (toolName === 'search_orders_by_email' && args.email) {
                 argStr = args.email;
             } else if (toolName === 'initiate_return') {
-                argStr = (args.order_id || '') + (args.item_title ? ' · ' + args.item_title : '');
+                argStr = (args.order_id || '') + (args.item_title ? ' · ' + args.item_title : '') + (args.customer_words ? ' · "' + args.customer_words + '"' : '');
             } else if (toolName === 'escalate_to_human' && args.reason) {
                 argStr = args.reason;
             }
@@ -1317,6 +1342,7 @@
                         'cross_customer_block': 'Blocked — order belongs to another customer',
                         'order_lookup_required': 'Blocked — must look up orders first',
                         'duplicate_action': 'Blocked — return already processed this conversation',
+                        'reason_not_grounded': 'Blocked — reason not found in customer\'s own words',
                     };
                     resultText = guardrailLabels[result.guardrail] || ('Blocked — ' + result.guardrail);
                 }
