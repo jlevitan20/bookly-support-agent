@@ -299,18 +299,6 @@ def initiate_return(order_id: str, reason: str, item_title: str = "") -> dict:
     if not order:
         return {"approved": False, "reason": f"Order {order_id} not found."}
 
-    # Auto-correct: if item_title provided but isn't in this order, find the right one
-    if item_title:
-        item_in_order = any(item_title.lower() in item["title"].lower() for item in order["items"])
-        if not item_in_order:
-            customer_email = order.get("customer_email", "")
-            for oid, o in ORDERS.items():
-                if o.get("customer_email") == customer_email and oid != order_id:
-                    if any(item_title.lower() in item["title"].lower() for item in o["items"]):
-                        order_id = oid
-                        order = o
-                        break
-
     # Already returned?
     if order.get("returned"):
         return {
@@ -347,6 +335,18 @@ def initiate_return(order_id: str, reason: str, item_title: str = "") -> dict:
                           f"30-day return window. The return window closed on "
                           f"{(delivered + timedelta(days=30)).strftime('%B %d, %Y')}.",
                 "policy_reference": "POL-001 — Return Policy",
+            }
+
+    # The order itself is eligible. Last check: if the customer named a specific
+    # book, it has to actually be in this order. Say so plainly rather than
+    # guessing which order was meant.
+    if item_title:
+        if not any(item_title.lower() in item["title"].lower() for item in order["items"]):
+            return {
+                "approved": False,
+                "reason": f"'{item_title}' is not part of order {order_id}. "
+                          f"That order contains: {', '.join(i['title'] for i in order['items'])}. "
+                          "Confirm which book and which order with the customer before retrying.",
             }
 
     # All checks passed — approve the return

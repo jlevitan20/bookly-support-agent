@@ -1065,7 +1065,6 @@
         let messages = [];
         let isLoading = false;
         let turnCount = 0;
-        let allToolCalls = [];
 
         const TOOL_LABELS = {
             "verify_customer_email": "🔐 Verifying customer identity",
@@ -1074,15 +1073,6 @@
             "initiate_return": "↩️ Processing return request",
             "search_knowledge_base": "📖 Checking policy",
             "escalate_to_human": "👤 Connecting to human agent",
-        };
-
-        const TOOL_ICONS = {
-            "verify_customer_email": "🔐",
-            "lookup_order": "📦",
-            "search_orders_by_email": "🔍",
-            "initiate_return": "↩️",
-            "search_knowledge_base": "📖",
-            "escalate_to_human": "👤",
         };
 
         const INTENT_LABELS = {
@@ -1095,7 +1085,6 @@
 
 
         let csatRating = null;
-        let csatShown = false;
 
         const CSAT_LABELS_MAP = {
             1: 'Very Dissatisfied',
@@ -1112,8 +1101,6 @@
             // Remove any previous unsubmitted CSAT widget (e.g., from an earlier resolution)
             var existing = document.getElementById('csatWidget');
             if (existing) existing.remove();
-
-            csatShown = true;
 
             const chat = document.getElementById('chat');
             const widget = document.createElement('div');
@@ -1232,11 +1219,6 @@
             var confidence = conversationState.intent_confidence || null;
             if (intent) {
                 var intentHtml = '<span class="intent-badge ' + intent + '">' + INTENT_LABELS[intent] + ' <span class="intent-confidence">(' + confidence + ')</span></span>';
-                if (conversationState.all_intents && conversationState.all_intents.length > 1) {
-                    conversationState.all_intents.forEach(function(i) {
-                        if (i !== intent) intentHtml += ' <span class="intent-badge ' + i + '" style="opacity:0.7;font-size:11px;">' + (INTENT_LABELS[i] || i) + '</span>';
-                    });
-                }
                 rows += '<div class="state-row"><span class="state-key">intent</span><span class="state-val">' + intentHtml + '</span></div>';
             } else {
                 rows += '<div class="state-row"><span class="state-key">intent</span>' + stateVal('—', 'empty') + '</div>';
@@ -1267,8 +1249,6 @@
             logEl.scrollTop = logEl.scrollHeight;
         }
 
-        var traceCounter = 0;
-
         function addTurnMarker() {
             const logEl = document.getElementById('toolLog');
             if (logEl.querySelector('.no-context')) {
@@ -1280,7 +1260,7 @@
             logEl.appendChild(marker);
         }
 
-        function addIntentToLog(intent, confidence, allIntents) {
+        function addIntentToLog(intent, confidence) {
             const logEl = document.getElementById('toolLog');
             if (logEl.querySelector('.no-context')) {
                 logEl.innerHTML = '';
@@ -1288,10 +1268,6 @@
             addTurnMarker();
             const label = INTENT_LABELS[intent] || intent;
             var resultText = 'Routed → ' + label + ' (' + confidence + ')';
-            if (allIntents && allIntents.length > 1) {
-                var extras = allIntents.filter(function(i) { return i !== intent; }).map(function(i) { return INTENT_LABELS[i] || i; });
-                resultText += ' · Also: ' + extras.join(', ');
-            }
             const entry = document.createElement('div');
             entry.className = 'trace-entry';
             entry.innerHTML =
@@ -1309,8 +1285,6 @@
             if (logEl.querySelector('.no-context')) {
                 logEl.innerHTML = '';
             }
-            traceCounter++;
-
             // Build args summary
             var argStr = '';
             if (toolName === 'verify_customer_email' && args.email) {
@@ -1342,6 +1316,7 @@
                         'input_validation': 'Blocked — ' + (result.message || 'invalid input'),
                         'cross_customer_block': 'Blocked — order belongs to another customer',
                         'order_lookup_required': 'Blocked — must look up orders first',
+                        'duplicate_action': 'Blocked — return already processed this conversation',
                     };
                     resultText = guardrailLabels[result.guardrail] || ('Blocked — ' + result.guardrail);
                 }
@@ -1383,11 +1358,11 @@
                 // Return result
                 else if (toolName === 'initiate_return') {
                     if (result.approved) {
-                        resultText = '✓ Approved — ' + (result.return_id || '') + ' · Refund: ' + (result.refund_amount || '');
+                        resultText = '✓ Approved — ' + (result.return_id || '') + ' · Refund: $' + Number(result.refund_amount || 0).toFixed(2);
                     } else {
                         statusClass = 'blocked';
                         statusIcon = '✕';
-                        resultText = 'Denied — ' + (result.denial_reason || result.message || 'ineligible');
+                        resultText = 'Denied — ' + (result.reason || result.message || 'ineligible');
                     }
                 }
                 // Knowledge base
@@ -1395,7 +1370,7 @@
                     var policies = result.results || [];
                     resultText = policies.length + ' polic' + (policies.length !== 1 ? 'ies' : 'y') + ' matched';
                     if (policies.length > 0) {
-                        resultText += ' (' + policies.map(function(p) { return p.id || p.title || ''; }).join(', ') + ')';
+                        resultText += ' (' + policies.map(function(p) { return p.policy_id || p.title || ''; }).join(', ') + ')';
                     }
                 }
                 // Escalation
@@ -1441,14 +1416,6 @@
             logEl.scrollTop = logEl.scrollHeight;
         }
 
-        function addGuardrailToLog(toolName, guardrail, message) {
-            // Now handled by addToolToLog via the result object — this is a no-op fallback
-        }
-
-        function resetToolLog() {
-            // No longer reset between turns — the trace log is persistent
-        }
-
         // =====================
         // CHAT + STREAMING
         // =====================
@@ -1469,7 +1436,6 @@
             turnCount++;
             document.getElementById('sendBtn').disabled = true;
 
-            resetToolLog();
             updateSidebar();
             showTyping();
 
@@ -1537,15 +1503,10 @@
                                 // Store intent in conversation state for sidebar display
                                 conversationState.current_intent = data.intent;
                                 conversationState.intent_confidence = data.confidence;
-                                conversationState.all_intents = data.all_intents || [data.intent];
                                 updateSidebar();
 
                                 // Add to tool log as the first entry
-                                addIntentToLog(data.intent, data.confidence, data.all_intents);
-                            }
-
-                            else if (eventType === 'guardrail_blocked') {
-                                // Already shown via tool_call result — no-op
+                                addIntentToLog(data.intent, data.confidence);
                             }
 
                             else if (eventType === 'confirmation_required') {
@@ -1615,7 +1576,12 @@
         }
 
         function formatText(text) {
-            return text
+            // Escape first, THEN apply markdown — so customer/LLM text can never
+            // inject markup, but our own <strong>/<br> tags still render.
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                 .replace(/\n/g, '<br>');
         }
@@ -1660,27 +1626,6 @@
             scrollToBottom();
         }
 
-        function addGuardrailToLog(toolName, guardrail, message) {
-            var logEl = document.getElementById('toolLog');
-            if (logEl.querySelector('.no-context')) {
-                logEl.innerHTML = '';
-            }
-            var labels = {
-                'verification_required': '🛡️ Blocked: not verified',
-                'input_validation': '🛡️ Blocked: invalid input',
-                'cross_customer_block': '🛡️ Blocked: wrong customer',
-            };
-            var label = labels[guardrail] || ('🛡️ Blocked: ' + guardrail);
-            var entry = document.createElement('div');
-            entry.className = 'tool-log-entry';
-            entry.innerHTML =
-                '<div class="tool-icon blocked">🛡️</div>' +
-                '<div class="tool-info">' +
-                '<div class="tool-name">' + toolName + '</div>' +
-                '<div class="tool-detail blocked">' + label + '</div>' +
-                '</div>';
-            logEl.appendChild(entry);
-        }
 
         function addConfirmationCard(orderId, reason) {
             const chat = document.getElementById('chat');
