@@ -141,6 +141,16 @@ ORDERS = {
     },
 }
 
+# The return reasons POL-001 recognizes. The initiate_return tool only accepts
+# these keys, so the agent has to map what the customer said onto policy — or
+# ask, if they haven't said why. Values are the customer-facing wording.
+RETURN_REASONS = {
+    "changed_my_mind": "changed my mind",
+    "wrong_item_received": "wrong item received",
+    "damaged_on_arrival": "item damaged on arrival",
+    "not_as_described": "item not as described",
+}
+
 # Policy articles — the agent's knowledge base
 # Structured so the agent retrieves and CITES specific articles
 # instead of making up answers from general knowledge
@@ -354,7 +364,7 @@ def initiate_return(order_id: str, reason: str, item_title: str = "") -> dict:
         "approved": True,
         "return_id": f"RET-{order_id.split('-')[1]}",
         "order_id": order_id,
-        "reason": reason,
+        "reason": RETURN_REASONS.get(reason, reason),
         "refund_amount": order["total"],
         "message": (
             f"Return approved for order {order_id}. A prepaid return label will be emailed "

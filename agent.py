@@ -14,10 +14,11 @@ The agent can't approve an invalid return because initiate_return() checks eligi
 
 import json
 import os
+import re
 import traceback
 from dotenv import load_dotenv
 from openai import OpenAI
-from data import TOOL_FUNCTIONS, ORDERS
+from data import TOOL_FUNCTIONS, ORDERS, RETURN_REASONS
 
 # Short confirmations that should carry forward the previous intent,
 # not be re-classified. These are deterministic — no LLM call needed.
@@ -37,6 +38,21 @@ def _is_confirmation(message):
     words = message.strip().lower().rstrip("!.,?").split()
     return bool(words) and len(words) <= 4 and all(w in CONFIRMATION_TOKENS for w in words)
 
+
+EMAIL_RE = re.compile(r"^\S+@\S+\.\S+$")
+ORDER_ID_RE = re.compile(r"^ord-\d+$", re.IGNORECASE)
+
+
+def _continues_current_flow(message):
+    """
+    True when the message is an ANSWER to something the agent asked — a bare
+    email address, an order ID, or a short confirmation — rather than a new
+    request. These carry the previous intent forward instead of being
+    re-classified, so replying 'jane@email.com' mid-return stays a return.
+    """
+    m = message.strip().rstrip("!.,?")
+    return bool(EMAIL_RE.match(m) or ORDER_ID_RE.match(m) or _is_confirmation(m))
+
 load_dotenv()
 
 
@@ -55,8 +71,10 @@ Categories:
 - off_topic: The message is NOT about Bookly, books, orders, accounts, or customer support at all
 
 Rules:
+- You are told the PREVIOUS intent. If the latest message simply continues that flow — an email
+  address, an order ID, a return reason like "it was damaged", "yes", "ok thanks" — return the
+  previous intent. Only switch when the customer raises something genuinely new.
 - Greetings like "hi" or "hello" at the START of a conversation → off_topic (no support context yet)
-- Greetings mid-conversation like "ok thanks" or "yes" → keep the conversation's existing intent
 - Political opinions, random questions, insults, jokes unrelated to books/orders → off_topic
 - Questions about Bookly itself ("are you a bot?", "what do you sell?") → policy_question
 - Rude messages DURING an active support flow ("this is stupid, where is my order") → keep the flow intent (order_inquiry)
@@ -76,7 +94,7 @@ Return JSON: {"intent": "<category>", "confidence": "high"|"medium"|"low"}
 Return ONLY valid JSON."""
 
 
-def classify_intent(latest_message, client):
+def classify_intent(latest_message, client, previous_intent=None):
     """
     Classify the customer's latest message into an intent category.
     Fast, cheap LLM call (~50 tokens) that runs before the main agent.
@@ -87,7 +105,10 @@ def classify_intent(latest_message, client):
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": INTENT_PROMPT},
-                {"role": "user", "content": latest_message},
+                {"role": "user", "content": (
+                    f"Previous intent: {previous_intent or 'none (start of conversation)'}\n"
+                    f"Latest message: {latest_message}"
+                )},
             ],
             response_format={"type": "json_object"},
             max_tokens=50,
@@ -118,8 +139,8 @@ The customer is asking about an order. Prioritize:
 The customer wants to return something. Follow this sequence:
 1. Verify identity if not verified
 2. Identify the specific order (ask if ambiguous)
-3. Check ALL of their messages for a reason already given — "came damaged", "wrong book", "didn't like it" are all reasons. Never re-ask for one the customer has already stated.
-4. Call initiate_return with the order ID and reason — the first call is held for confirmation automatically
+3. Find the reason. Check ALL of their messages — "came damaged", "wrong book", "didn't like it" are reasons; never re-ask for one already given. But "it just arrived" or "I want to return it" is NOT a reason. If the customer has not said WHY, ASK — do not call initiate_return with a guessed or invented reason.
+4. Map their reason onto a policy category (changed_my_mind / wrong_item_received / damaged_on_arrival / not_as_described) and call initiate_return — the first call is held for confirmation automatically
 5. Clearly explain next steps: return label, refund timeline, store credit option
 If the return is denied, explain exactly why and offer alternatives (escalation, store credit)
 """,
@@ -168,7 +189,7 @@ If the customer provides an order ID but no email, still ask for email verificat
 - verify_customer_email: ALWAYS call this before accessing order data
 - lookup_order: Use when the customer has a specific order ID
 - search_orders_by_email: Use when the customer doesn't know their order ID — find their orders and let them pick
-- initiate_return: Call once you have the order ID and reason. The reason may already be stated in an earlier message (e.g., 'came damaged', 'wrong book') — do NOT re-ask for it if the customer already said it
+- initiate_return: Call once you have BOTH the order ID and the customer's reason. The reason may already be stated in an earlier message (e.g., 'came damaged', 'wrong book') — do NOT re-ask for it if the customer already said it. If they have not given one, ask before calling.
 - search_knowledge_base: Use for ANY policy or general question. ALWAYS cite the policy in your response.
 - escalate_to_human: Use when the customer is frustrated, the issue is outside your capabilities, or they explicitly ask for a human
 
@@ -273,7 +294,8 @@ TOOLS = [
                     },
                     "reason": {
                         "type": "string",
-                        "description": "The customer's reason for returning the item",
+                        "enum": list(RETURN_REASONS),
+                        "description": "The customer's reason, mapped onto a Return Policy (POL-001) category. Only use one the customer has actually expressed — if they haven't said why, ask them first instead of calling this tool.",
                     },
                     "item_title": {
                         "type": "string",
@@ -407,6 +429,17 @@ def _execute_tool(func_name, func_args, conversation_state):
                 "guardrail": "input_validation",
             }, None
 
+    # 2b. Return reason must be a policy category. The schema declares an enum, but
+    # the server checks too — the model can't submit a return "because it arrived".
+    if func_name == "initiate_return" and func_args.get("reason") not in RETURN_REASONS:
+        return {
+            "error": True,
+            "message": f"'{func_args.get('reason')}' is not a return reason under POL-001. "
+                       f"Valid reasons: {', '.join(RETURN_REASONS)}. "
+                       "If the customer hasn't said why they're returning it, ask them.",
+            "guardrail": "input_validation",
+        }, None
+
     # 3. Cross-customer access check: ensure the order belongs to the verified customer
     if func_name in ("lookup_order", "initiate_return") and conversation_state.get("verified"):
         check_order_id = func_args.get("order_id", "")
@@ -537,13 +570,13 @@ def get_agent_response_stream(messages, conversation_state):
     # --- Intent classification: triage before the main agent ---
     latest_msg = messages[-1]["content"] if messages else ""
 
-    # Deterministic shortcut: short confirmations mid-conversation carry
-    # forward the previous intent instead of re-classifying.
+    # Deterministic shortcut: replies to the agent's own questions (an email, an
+    # order ID, "yes") carry the previous intent forward — no LLM call needed.
     previous_intent = conversation_state.get("current_intent")
-    if _is_confirmation(latest_msg) and previous_intent and previous_intent != "off_topic":
+    if _continues_current_flow(latest_msg) and previous_intent and previous_intent != "off_topic":
         intent_result = {"intent": previous_intent, "confidence": "high"}
     else:
-        intent_result = classify_intent(latest_msg, client)
+        intent_result = classify_intent(latest_msg, client, previous_intent)
 
     detected_intent = intent_result.get("intent", "order_inquiry")
     conversation_state["current_intent"] = detected_intent
