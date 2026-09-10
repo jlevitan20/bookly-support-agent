@@ -1,5 +1,5 @@
 """
-agent.py — The core agent: system prompt, tool definitions, and conversation loop.
+agent.py: the core agent. System prompt, tool definitions, and the conversation loop.
 
 This is the brain of the Bookly support agent. It:
 1. Defines the system prompt (the agent's personality, rules, and guardrails)
@@ -7,9 +7,9 @@ This is the brain of the Bookly support agent. It:
 3. Runs the conversation loop: send messages to OpenAI, handle tool calls, stream the
    response back as Server-Sent Events for real-time UI updates
 
-The key architectural decision: the LLM decides WHAT to do, but the tools enforce HOW.
-The agent can't invent order data because it must call lookup_order() to get it.
-The agent can't approve an invalid return because initiate_return() checks eligibility.
+The main design decision: the model decides what to do, and the tools decide how it happens.
+The agent can't invent order data, because the only way to get it is lookup_order().
+The agent can't approve a bad return, because initiate_return() checks eligibility.
 """
 
 import json
@@ -20,8 +20,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from data import TOOL_FUNCTIONS, ORDERS, RETURN_REASONS
 
-# Short confirmations that should carry forward the previous intent,
-# not be re-classified. These are deterministic — no LLM call needed.
+# Short confirmations carry the previous intent forward instead of being
+# re-classified. This is deterministic, so no model call is needed.
 CONFIRMATION_WORDS = {
     "confirm", "confirmed", "yes", "yeah", "yep", "yup", "sure", "ok", "okay",
     "go ahead", "proceed", "do it", "please", "yes please", "correct",
@@ -34,13 +34,13 @@ CONFIRMATION_TOKENS = {word for phrase in CONFIRMATION_WORDS for word in phrase.
 
 
 def _is_confirmation(message):
-    """True for short affirmations — 'yes', 'do it', 'yes go ahead', 'ok sure'."""
+    """True for short affirmations like 'yes', 'do it', 'yes go ahead', 'ok sure'."""
     words = message.strip().lower().rstrip("!.,?").split()
     return bool(words) and len(words) <= 4 and all(w in CONFIRMATION_TOKENS for w in words)
 
 
 def _normalize_text(text):
-    """Lowercase, strip punctuation, collapse whitespace — for forgiving substring checks."""
+    """Lowercase, strip punctuation, collapse whitespace. Used for forgiving substring checks."""
     return " ".join(re.sub(r"[^a-z0-9]+", " ", str(text).lower()).split())
 
 
@@ -50,10 +50,10 @@ ORDER_ID_RE = re.compile(r"^ord-\d+$", re.IGNORECASE)
 
 def _continues_current_flow(message):
     """
-    True when the message is an ANSWER to something the agent asked — a bare
-    email address, an order ID, or a short confirmation — rather than a new
-    request. These carry the previous intent forward instead of being
-    re-classified, so replying 'jane@email.com' mid-return stays a return.
+    True when the message answers something the agent asked: a bare email
+    address, an order ID, or a short confirmation. These carry the previous
+    intent forward instead of being re-classified, so replying
+    'jane@email.com' in the middle of a return stays a return.
     """
     m = message.strip().rstrip("!.,?")
     return bool(EMAIL_RE.match(m) or ORDER_ID_RE.match(m) or _is_confirmation(m))
@@ -62,7 +62,7 @@ load_dotenv()
 
 
 # ---------------------------------------------------------------------------
-# INTENT CLASSIFIER — lightweight triage before the main agent runs
+# INTENT CLASSIFIER: a cheap triage call before the main agent runs
 # ---------------------------------------------------------------------------
 
 INTENT_PROMPT ="""You are an intent classifier for Bookly, an online bookstore's support system.
@@ -129,14 +129,14 @@ def classify_intent(latest_message, client, previous_intent=None):
         )
         return json.loads(response.choices[0].message.content)
     except Exception as e:
-        # Fall back to the most common intent rather than failing the turn, but
-        # make the failure visible — a silent default routes confidently wrong.
+        # Fall back to the most common intent instead of failing the turn, but
+        # log it. A silent default routes confidently in the wrong direction.
         print(f"[classify_intent] failed, defaulting to order_inquiry: {e}")
         return {"intent": "order_inquiry", "confidence": "low"}
 
 
 # ---------------------------------------------------------------------------
-# INTENT-SPECIFIC PROMPT SNIPPETS — focused instructions per intent
+# INTENT-SPECIFIC PROMPT SNIPPETS: a short playbook per intent
 # ---------------------------------------------------------------------------
 
 INTENT_SNIPPETS = {
@@ -179,7 +179,7 @@ email verification. Answer right away. You MUST:
 """,
 }
 
-# Intents that count as an "issue" the customer wants resolved — everything but
+# Intents that count as an "issue" the customer wants resolved: everything but
 # off_topic. Each open issue is tracked in conversation_state["issues"] until a
 # tool outcome resolves it. The label is the wording used in prompts and the UI.
 ISSUE_LABELS = {
@@ -190,7 +190,7 @@ ISSUE_LABELS = {
 }
 
 # ---------------------------------------------------------------------------
-# SYSTEM PROMPT — the agent's personality, rules, and guardrails
+# SYSTEM PROMPT: the agent's personality, rules, and guardrails
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """You are a friendly, professional customer support agent for Bookly, an online bookstore. Your name is Bookly Support.
@@ -249,7 +249,7 @@ IMPORTANT: Do NOT ask "Shall I go ahead?" BEFORE calling initiate_return. The se
 """
 
 # ---------------------------------------------------------------------------
-# TOOL DEFINITIONS — tells OpenAI what tools the agent can call
+# TOOL DEFINITIONS: what OpenAI is told the agent can call
 # These match the functions in data.py exactly
 # ---------------------------------------------------------------------------
 
@@ -430,7 +430,7 @@ def _resolve_issues(func_name, result, conversation_state):
       - a policy/account question once the knowledge base returned a policy
       - an escalation moves every open issue to "escalated"
     (A turn that answers from order data already fetched earlier is handled in
-    the conversation loop — see the end-of-turn check there.)
+    the conversation loop. See the end-of-turn check there.)
     """
     issues = conversation_state.get("issues", [])
     if not issues or not isinstance(result, dict) or result.get("guardrail"):
@@ -484,8 +484,8 @@ def _execute_tool(func_name, func_args, conversation_state, customer_text=""):
         }, None
 
     # 1b. Scope the order search to the verified customer.
-    # We overwrite the email the model supplied rather than checking it — the tool
-    # simply cannot be pointed at another customer's account.
+    # We overwrite the email the model supplied instead of checking it. The tool
+    # cannot be pointed at another customer's account.
     if func_name == "search_orders_by_email" and conversation_state.get("verified"):
         func_args["email"] = conversation_state["customer_email"]
 
@@ -510,7 +510,7 @@ def _execute_tool(func_name, func_args, conversation_state, customer_text=""):
             }, None
 
     # 2b. Return reason must be a policy category. The schema declares an enum, but
-    # the server checks too — the model can't submit a return "because it arrived".
+    # the server checks too. The model can't submit a return "because it arrived".
     if func_name == "initiate_return" and func_args.get("reason") not in RETURN_REASONS:
         return {
             "error": True,
@@ -522,7 +522,7 @@ def _execute_tool(func_name, func_args, conversation_state, customer_text=""):
 
     # 2c. Grounding: the reason must be backed by the customer's own words. The
     # model has to quote what the customer said; if that quote isn't in the
-    # transcript, the reason was invented — block it and ask instead.
+    # transcript, the reason was invented. Block it and ask instead.
     if func_name == "initiate_return":
         quote = _normalize_text(func_args.get("customer_words", ""))
         if not quote or quote not in customer_text:
@@ -534,7 +534,7 @@ def _execute_tool(func_name, func_args, conversation_state, customer_text=""):
                 "guardrail": "reason_not_grounded",
             }, None
 
-    # 3. Cross-customer access check: ensure the order belongs to the verified customer
+    # 3. Cross-customer access check: the order must belong to the verified customer
     if func_name in ("lookup_order", "initiate_return") and conversation_state.get("verified"):
         check_order_id = func_args.get("order_id", "")
         order_record = ORDERS.get(check_order_id)
@@ -589,7 +589,7 @@ def _execute_tool(func_name, func_args, conversation_state, customer_text=""):
 
     # --- Confirmation gate for destructive actions ---
     # The first call to initiate_return is held pending; it executes only when the
-    # agent calls it again on a LATER turn — i.e. after the customer has actually
+    # agent calls it again on a LATER turn, after the customer has actually
     # replied. Comparing turn numbers is what makes this a real gate: without it the
     # model could satisfy its own confirmation by calling the tool twice in one turn.
     if func_name == "initiate_return":
@@ -601,7 +601,7 @@ def _execute_tool(func_name, func_args, conversation_state, customer_text=""):
             and pending.get("reason") == func_args.get("reason")   # a changed reason is a new request
         )
         if same_request and pending.get("turn") != this_turn:
-            # Customer confirmed on a later turn — clear pending and fall through to execute
+            # Customer confirmed on a later turn. Clear pending and fall through to execute
             conversation_state.pop("pending_return", None)
         else:
             # Hold pending and ask the agent to confirm with the customer
@@ -635,7 +635,7 @@ def _execute_tool(func_name, func_args, conversation_state, customer_text=""):
     if func_name in ("search_orders_by_email", "lookup_order") and not result.get("error"):
         conversation_state["orders_looked_up"] = True
 
-    # Only approved returns reach this point — denials returned early from the
+    # Only approved returns reach this point. Denials returned early from the
     # eligibility preview above, and were recorded there.
     if func_name == "initiate_return":
         conversation_state.setdefault("actions_taken", []).append(
@@ -651,7 +651,7 @@ def _execute_tool(func_name, func_args, conversation_state, customer_text=""):
 
 
 # ---------------------------------------------------------------------------
-# CONVERSATION LOOP — processes each user message, yields SSE events
+# CONVERSATION LOOP: processes each user message and yields SSE events
 # ---------------------------------------------------------------------------
 
 def get_agent_response_stream(messages, conversation_state):
@@ -673,7 +673,7 @@ def get_agent_response_stream(messages, conversation_state):
     latest_msg = messages[-1]["content"] if messages else ""
 
     # Deterministic shortcut: replies to the agent's own questions (an email, an
-    # order ID, "yes") carry the previous intent forward — no LLM call needed.
+    # order ID, "yes") carry the previous intent forward. No model call needed.
     previous_intent = conversation_state.get("current_intent")
     carried_forward = bool(_continues_current_flow(latest_msg) and previous_intent and previous_intent != "off_topic")
     if carried_forward:
@@ -685,11 +685,11 @@ def get_agent_response_stream(messages, conversation_state):
     conversation_state["current_intent"] = detected_intent
     conversation_state["intent_confidence"] = intent_result.get("confidence", "low")
 
-    # Open an issue for each distinct thing the customer asked for this turn —
+    # Open an issue for each distinct thing the customer asked for this turn:
     # the primary intent plus any secondary one the classifier spotted. One row
-    # per intent: raising a resolved issue again reopens its row rather than
-    # duplicating it. Tool outcomes close rows (see _resolve_issues). A bare
-    # reply ("yes", an email) continues an existing issue — it never opens one.
+    # per intent: raising a resolved issue again reopens its row instead of
+    # adding a second one. Tool outcomes close rows (see _resolve_issues). A bare
+    # reply ("yes", an email) continues an existing issue. It never opens one.
     secondary = intent_result.get("secondary")
     if not isinstance(secondary, list):
         secondary = []
@@ -701,7 +701,7 @@ def get_agent_response_stream(messages, conversation_state):
         if existing is None:
             issues.append({"intent": intent, "opened_turn": conversation_state["turn"], "status": "open"})
         elif existing.get("status") == "resolved":
-            # Escalated rows stay escalated — a human owns them now.
+            # Escalated rows stay escalated. A human owns them now.
             existing["status"] = "open"
             existing["opened_turn"] = conversation_state["turn"]
 
@@ -711,7 +711,7 @@ def get_agent_response_stream(messages, conversation_state):
     full_system_prompt = _build_system_prompt(conversation_state, intent=detected_intent)
     full_messages = [{"role": "system", "content": full_system_prompt}] + messages
 
-    # Everything the customer has typed, normalized — the grounding guardrail
+    # Everything the customer has typed, normalized. The grounding guardrail
     # checks a return reason's quoted evidence against this.
     customer_text = _normalize_text(" ".join(m.get("content", "") for m in messages if m.get("role") == "user"))
 
@@ -762,7 +762,7 @@ def get_agent_response_stream(messages, conversation_state):
 
                 continue
 
-            # No more tool calls — stream the final response token-by-token
+            # No more tool calls. Stream the final response token by token
             yield ": keepalive\n\n"
             stream = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -779,9 +779,9 @@ def get_agent_response_stream(messages, conversation_state):
                     full_response += token
                     yield f"event: token\ndata: {json.dumps({'token': token})}\n\n"
 
-            # An order question answered with NO tool call this turn — from order
-            # data a tool already retrieved earlier in the conversation — counts as
-            # resolved: the answer is grounded in tool data, just not re-fetched.
+            # An order question answered with NO tool call this turn, from order
+            # data a tool already retrieved earlier in the conversation, counts as
+            # resolved. The answer is grounded in tool data, just not re-fetched.
             if not tools_called and conversation_state.get("current_order_id"):
                 for issue in conversation_state.get("issues", []):
                     if issue.get("intent") == "order_inquiry" and issue.get("status") == "open":
@@ -805,7 +805,7 @@ def get_agent_response_stream(messages, conversation_state):
 
 
 # ---------------------------------------------------------------------------
-# CONVERSATION SUMMARY — for internal CX team review
+# CONVERSATION SUMMARY: for the internal CX team
 # ---------------------------------------------------------------------------
 
 def generate_conversation_summary(messages, conversation_state):

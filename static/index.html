@@ -1224,7 +1224,7 @@
             rows += '<div class="state-row"><span class="state-key">pending</span>' + (pending ? stateVal('return ' + pending.order_id, 'bool-false') : stateVal('—', 'empty')) + '</div>';
             rows += '<div class="state-row"><span class="state-key">turns</span>' + stateVal(turnCount) + '</div>';
 
-            // Intent classification — THIS turn only. It routes the prompt; it is not history.
+            // Intent classification for THIS turn only. It routes the prompt. It is not history.
             var intent = conversationState.current_intent || null;
             var confidence = conversationState.intent_confidence || null;
             if (intent) {
@@ -1234,8 +1234,8 @@
                 rows += '<div class="state-row"><span class="state-key">intent (turn)</span>' + stateVal('—', 'empty') + '</div>';
             }
 
-            // Issue ledger — everything the customer has asked for across the whole
-            // conversation, each with a status derived from tool outcomes (agent.py _resolve_issues)
+            // Issue ledger: everything the customer has asked for across the whole
+            // conversation, each with a status set by tool outcomes (agent.py _resolve_issues)
             var issues = conversationState.issues || [];
             if (issues.length > 0) {
                 var ISSUE_STATUS_CLASS = { open: 'unresolved', resolved: 'resolved', escalated: 'escalated' };
@@ -1603,8 +1603,8 @@
         }
 
         function formatText(text) {
-            // Escape first, THEN apply markdown — so customer/LLM text can never
-            // inject markup, but our own <strong>/<br> tags still render.
+            // Escape first, THEN apply markdown, so customer and LLM text can never
+            // inject markup while our own <strong>/<br> tags still render.
             return String(text)
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')

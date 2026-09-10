@@ -1,10 +1,10 @@
 """
-server.py — FastAPI web server for the Bookly support agent.
+server.py: the FastAPI web server for the Bookly support agent.
 
 This is the entry point. It:
 1. Serves the chat UI (static HTML file)
-2. Handles the /chat/stream endpoint — streams the agent's response via Server-Sent Events
-3. Handles the /summary endpoint — generates a conversation recap for the CX team
+2. Handles /chat/stream, which streams the agent's response as Server-Sent Events
+3. Handles /summary, which generates a conversation recap for the CX team
 
 Run with: uvicorn server:app --reload
 """
@@ -49,7 +49,7 @@ async def root():
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     """
-    Streaming chat endpoint — returns Server-Sent Events.
+    Streaming chat endpoint. Returns Server-Sent Events.
     Tool calls arrive as they happen, then text streams token-by-token.
     """
     messages = [{"role": m.role, "content": m.content} for m in request.messages]

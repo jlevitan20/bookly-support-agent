@@ -1,12 +1,12 @@
 """
-data.py — Mock data and tool functions for the Bookly support agent.
+data.py: mock data and the tool functions for the Bookly support agent.
 
 This file contains:
 1. Mock customers, orders, and policy articles (the "database")
 2. Tool functions the agent calls to look up data and take actions
 
 In production, these functions would hit a real database or API.
-The agent doesn't know the difference — it just calls the function and gets a result.
+The agent doesn't know the difference. It calls the function and gets a result.
 """
 
 from datetime import datetime, timedelta
@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 # Current date for calculating return eligibility, etc.
 TODAY = datetime.now()
 
-# Customers — keyed by email (the unique identifier)
+# Customers, keyed by email
 CUSTOMERS = {
     "jane.smith@email.com": {
         "customer_id": "CUST-001",
@@ -42,10 +42,10 @@ CUSTOMERS = {
     },
 }
 
-# Orders — keyed by order ID
+# Orders, keyed by order ID
 # Each order is designed to showcase a specific agent behavior in the demo
 ORDERS = {
-    # Jane's orders — she has two, which forces the "which order?" flow
+    # Jane has two orders, which forces the "which order?" flow
     "ORD-7201": {
         "order_id": "ORD-7201",
         "customer_email": "jane.smith@email.com",
@@ -76,7 +76,7 @@ ORDERS = {
         "shipping_method": "Standard (5-7 business days)",
         "returned": False,
     },
-    # Marcus — delivered 45 days ago, PAST the 30-day return window
+    # Marcus: delivered 45 days ago, past the 30-day return window
     "ORD-6890": {
         "order_id": "ORD-6890",
         "customer_email": "marcus.jones@email.com",
@@ -92,7 +92,7 @@ ORDERS = {
         "shipping_method": "Expedited (2-3 business days)",
         "returned": False,
     },
-    # Sarah — digital purchase (ebook), non-refundable per policy
+    # Sarah: digital purchase (ebook), not refundable per policy
     "ORD-7300": {
         "order_id": "ORD-7300",
         "customer_email": "sarah.chen@email.com",
@@ -107,7 +107,7 @@ ORDERS = {
         "shipping_method": "Digital delivery (instant)",
         "returned": False,
     },
-    # Tom — order still processing, hasn't shipped yet (cancellation eligible)
+    # Tom: order still processing, hasn't shipped yet (cancellation eligible)
     "ORD-7350": {
         "order_id": "ORD-7350",
         "customer_email": "tom.baker@email.com",
@@ -122,7 +122,7 @@ ORDERS = {
         "shipping_method": "Standard (5-7 business days)",
         "returned": False,
     },
-    # Tom — already returned order
+    # Tom: already returned
     "ORD-6500": {
         "order_id": "ORD-6500",
         "customer_email": "tom.baker@email.com",
@@ -142,8 +142,8 @@ ORDERS = {
 }
 
 # The return reasons POL-001 recognizes. The initiate_return tool only accepts
-# these keys, so the agent has to map what the customer said onto policy — or
-# ask, if they haven't said why. Values are the customer-facing wording.
+# these keys, so the agent has to map what the customer said onto policy, or
+# ask if they haven't said why. Values are the customer-facing wording.
 RETURN_REASONS = {
     "changed_my_mind": "changed my mind",
     "wrong_item_received": "wrong item received",
@@ -151,7 +151,7 @@ RETURN_REASONS = {
     "not_as_described": "item not as described",
 }
 
-# Policy articles — the agent's knowledge base
+# Policy articles: the agent's knowledge base
 # Structured so the agent retrieves and CITES specific articles
 # instead of making up answers from general knowledge
 POLICIES = {
@@ -228,7 +228,7 @@ POLICIES = {
 
 
 # ---------------------------------------------------------------------------
-# TOOL FUNCTIONS — called by the agent via OpenAI function calling
+# TOOL FUNCTIONS: called by the agent through OpenAI function calling
 # ---------------------------------------------------------------------------
 
 def verify_customer_email(email: str) -> dict:
@@ -350,7 +350,7 @@ def initiate_return(order_id: str, reason: str, customer_words: str = "", item_t
             }
 
     # The order itself is eligible. Last check: if the customer named a specific
-    # book, it has to actually be in this order. Say so plainly rather than
+    # book, it has to actually be in this order. Say so plainly instead of
     # guessing which order was meant.
     if item_title:
         if not any(item_title.lower() in item["title"].lower() for item in order["items"]):
@@ -361,7 +361,7 @@ def initiate_return(order_id: str, reason: str, customer_words: str = "", item_t
                           "Confirm which book and which order with the customer before retrying.",
             }
 
-    # All checks passed — approve the return
+    # All checks passed. Approve the return
     return {
         "approved": True,
         "return_id": f"RET-{order_id.split('-')[1]}",
@@ -383,7 +383,7 @@ def search_knowledge_base(query: str) -> dict:
     """
     query_lower = query.lower()
 
-    # Simple keyword matching — in production this would be vector search / RAG
+    # Simple keyword matching. In production this would be vector search
     keyword_map = {
         "returns": ["return", "send back", "refund", "exchange", "return policy"],
         "shipping": ["shipping", "delivery", "ship", "tracking", "how long", "arrive"],
@@ -430,7 +430,7 @@ def escalate_to_human(summary: str, reason: str, customer_sentiment: str) -> dic
 
 
 # ---------------------------------------------------------------------------
-# TOOL REGISTRY — maps function names to their implementations
+# TOOL REGISTRY: maps function names to their implementations
 # Used by the agent to dispatch tool calls from OpenAI
 # ---------------------------------------------------------------------------
 

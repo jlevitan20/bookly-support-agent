@@ -15,33 +15,33 @@ Customer → Chat UI → FastAPI Server → OpenAI (gpt-4o-mini)
                                    (customers, orders, policies)
 ```
 
-**Key design decisions:**
-- **Structured tool use** — the LLM decides *what* to do, but tools enforce *how*. The agent can't invent order data because it must call `lookup_order()` to get it.
-- **Verification-first flow** — customer email is verified before any order data is shared, preventing unauthorized access.
-- **Knowledge base with citation** — policy questions are answered by retrieving specific policy articles, not from the LLM's general knowledge. This prevents hallucinated policies.
-- **Conversation state tracking** — a structured state object tracks verification status, current order, and actions taken, injected into each prompt so the agent knows where it is. It also keeps an **issue ledger**: every distinct thing the customer has asked for, with a status (open / resolved / escalated) derived from tool outcomes rather than from the model's own claim to have helped — so a two-issue message can't quietly lose its second issue.
-- **Graceful escalation** — when the agent can't resolve an issue, it generates a structured handoff packet for a human agent with full context and customer sentiment.
+**Design decisions**
 
-**Guardrails are enforced server-side, not by the prompt.** Before any tool runs, `_execute_tool()` in
-`agent.py` independently checks that the customer is verified, that the order ID is well-formed and real,
-that the order belongs to *this* customer, and that a destructive action has been explicitly confirmed. The
-order search is scoped to the verified customer's email regardless of what the model passes, so it cannot be
-aimed at another account. A jailbroken prompt still can't get past these — the model proposes, the server
-disposes.
+- The model decides what to do. The tools decide how it happens. The agent can't invent order data, because the only way to get it is to call `lookup_order()`.
+- Nothing about an order is shared until the customer's email is verified.
+- Policy questions are answered by retrieving the policy article and citing it. The model never answers from general knowledge, so it can't make up a refund window.
+- A state object tracks verification, the current order, and actions taken, and goes into the prompt on every turn. It also keeps an issue ledger: each thing the customer asked for, with a status (open, resolved, escalated) set by tool results, never by the model saying it helped. A message with two requests can't quietly lose the second one.
+- When the agent can't resolve something, it hands off to a person with a summary, the reason, and the customer's mood.
+
+**The guardrails live in code.** Before any tool runs, `_execute_tool()` in `agent.py` checks that the
+customer is verified, that the order ID is real, that the order belongs to this customer, that a return
+reason is one the customer actually gave, and that a destructive action was confirmed on a later turn. The
+order search always uses the verified customer's email, whatever the model passes, so it can't be pointed at
+another account. A jailbroken prompt can change what the model says. It can't change what the server allows.
 
 ### Known tradeoffs
 
-- **Conversation state round-trips through the client.** The server is stateless; `conversation_state` is
-  returned to the browser and sent back each turn. That keeps the demo trivially runnable, but it means a
-  crafted request could assert `verified: true`. In production this moves to a server-side session store
-  keyed by conversation ID — the guardrail logic is unchanged, only where state lives.
+- **Conversation state round-trips through the client.** The server is stateless. `conversation_state` goes
+  to the browser and comes back with the next message. That keeps the demo easy to run, but a crafted
+  request could claim `verified: true`. In production the state moves to a server-side session store keyed
+  by conversation ID. The guardrail logic doesn't change, only where the state lives.
 - **Keyword search stands in for retrieval.** `search_knowledge_base` matches keywords against six policy
-  articles. With a real policy corpus this becomes vector search, but the important property — the agent
-  must retrieve and cite rather than recall — is already enforced.
-- **Mock data is in-process.** Returns mutate nothing durable; restarting the server resets everything.
+  articles. A real policy corpus needs vector search. The rule that matters, retrieve and cite instead of
+  recalling, is already enforced.
+- **Mock data is in-process.** Returns change nothing durable. Restarting the server resets everything.
 - **Issues are keyed by type.** The ledger opens one issue per intent (return, order status, policy,
-  account), so two distinct order questions in one conversation collapse into a single
-  `order_inquiry` issue. Keying by `(intent, order_id)` is the production follow-up.
+  account), so two different order questions in one conversation share a single `order_inquiry` issue.
+  Keying by `(intent, order_id)` is the production follow-up.
 
 ## Quick Start
 
@@ -71,7 +71,7 @@ Then open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ### Demo Scenarios
 
-Try these conversations to see the agent's key behaviors:
+Try these conversations to see the main behaviors:
 
 **1. Order status with verification (multi-turn + tool use)**
 > "Where's my order?"
@@ -98,11 +98,11 @@ Try these conversations to see the agent's key behaviors:
 
 ```
 bookly-support-agent/
-├── server.py       # FastAPI web server — routes and API endpoint
-├── agent.py        # Agent logic — system prompt, tool definitions, conversation loop
+├── server.py       # FastAPI server: routes and the streaming endpoint
+├── agent.py        # Agent logic: system prompt, tool definitions, conversation loop
 ├── data.py         # Mock data (customers, orders, policies) and tool functions
 ├── static/
-│   └── index.html  # Chat UI — single-page web interface
+│   └── index.html  # Chat UI, a single page
 ├── requirements.txt
 ├── .env.example    # Copy to .env and add your OpenAI key
 └── README.md
@@ -110,19 +110,19 @@ bookly-support-agent/
 
 ## Mock Data
 
-The agent works with a small set of realistic mock data designed to showcase specific behaviors:
+The mock data is small, and each order exists to trigger one specific behavior:
 
 | Order ID | Customer | Status | Demo Purpose |
 |----------|----------|--------|-------------|
-| ORD-7201 | Jane Smith | In Transit | Happy path — order tracking |
+| ORD-7201 | Jane Smith | In Transit | Happy path, order tracking |
 | ORD-7145 | Jane Smith | Delivered (12 days ago) | Eligible for return |
-| ORD-6890 | Marcus Jones | Delivered (45 days ago) | Past return window — denial |
-| ORD-7300 | Sarah Chen | Delivered (Ebook) | Digital item — non-refundable |
+| ORD-6890 | Marcus Jones | Delivered (45 days ago) | Past return window, denied |
+| ORD-7300 | Sarah Chen | Delivered (Ebook) | Digital item, not refundable |
 | ORD-7350 | Tom Baker | Processing | Cancellation eligible |
-| ORD-6500 | Tom Baker | Returned | Already returned — edge case |
+| ORD-6500 | Tom Baker | Returned | Already returned |
 
 ## Built With
 
-- **Python** + **FastAPI** — lightweight, fast web server
-- **OpenAI gpt-4o-mini** — LLM with function-calling for tool use
-- **Vanilla HTML/CSS/JS** — no frontend framework, just a clean chat interface
+- Python and FastAPI for the server
+- OpenAI gpt-4o-mini with function calling for tool use
+- Plain HTML, CSS, and JavaScript for the chat UI. No frontend framework.
